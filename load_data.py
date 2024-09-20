@@ -15,5 +15,5 @@ sports_videos = (sample for sample in dataset if sample['json']['content_fine_ca
 for sample in sports_videos:
     video_filename = os.path.join(save_directory, f"sports_video_{sample['json']['original_video_filename']}.mp4")
     with open(video_filename, 'wb') as video_file:
-        video_file.write(sample['mp4'])
+        video_file.write(sample['mp4']) 
     print(f"Downloaded {video_filename}")
