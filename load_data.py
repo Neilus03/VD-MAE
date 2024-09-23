@@ -1,19 +1,38 @@
 import os
+from tqdm import tqdm
 from datasets import load_dataset
 
-# Create a folder to save the sports videos
-save_directory = "sports_videos"
-os.makedirs(save_directory, exist_ok=True)
+from datasets import load_dataset
+import json
 
-# Load the FineVideo dataset
+# Load the dataset in streaming mode
 dataset = load_dataset("HuggingFaceFV/finevideo", split="train", streaming=True)
 
-# Filter only the sports category videos
-sports_videos = (sample for sample in dataset if sample['json']['content_fine_category'] == 'Sports')
+# Define a filter function to select only Sports videos
+def is_sports(sample):
+    return sample['json']['content_parent_category'] == 'Sports'
 
-# Download and save the sports videos in the specified directory
-for sample in sports_videos:
-    video_filename = os.path.join(save_directory, f"sports_video_{sample['json']['original_video_filename']}.mp4")
+# Apply the filter to the dataset
+sports_dataset = filter(is_sports, dataset)
+
+# Create directories to save videos and metadata
+import os
+os.makedirs("sports_videos", exist_ok=True)
+os.makedirs("sports_metadata", exist_ok=True)
+
+# Iterate over the filtered dataset and save the samples
+for idx, sample in enumerate(sports_dataset):
+    # Print some information
+    print(f"Processing sample {idx}")
+
+    # Save the video file
+    video_filename = f"sports_videos/sample_{idx}.mp4"
     with open(video_filename, 'wb') as video_file:
-        video_file.write(sample['mp4']) 
-    print(f"Downloaded {video_filename}")
+        video_file.write(sample['mp4'])
+
+    # Save the json metadata
+    json_filename = f"sports_metadata/sample_{idx}.json"
+    with open(json_filename, 'w') as json_file:
+        json.dump(sample['json'], json_file)
+
+
