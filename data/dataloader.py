@@ -57,7 +57,7 @@ depth_model = depth_model.to(DEVICE).eval()
 
 # Define a custom dataset class that inherits from PyTorch's Dataset class.
 class VideoFrameDataset(Dataset):
-    def __init__(self, video_folder, transform=None, depth_model=None):
+    def __init__(self, video_folder, transform=None, depth_model=None, shuffle=True):
         """
         Initialize the dataset with the specified parameters.
 
@@ -84,7 +84,7 @@ class VideoFrameDataset(Dataset):
         # Build the index of frames across all videos in the dataset.
         self._build_frame_index()
 
-    def _build_frame_index(self):
+    def _build_frame_index(self, shuffle=True):
         """
         Build an index of all frames from all videos in the specified folder.
         This method populates self.frame_info and self.video_frame_indices.
@@ -128,7 +128,7 @@ class VideoFrameDataset(Dataset):
             # Calculate the frame interval to sample frames at 1/5 of the original fps.
             if fps > 0:
                 # If fps is available and valid, calculate the frame interval.
-                frame_interval = max(1, int(round(fps * 0.2)))  # Scale down fps to 1/5.
+                frame_interval = max(1, int(round(fps / 5)))  # Scale down fps to 1/5.
             else:
                 # If fps is not available, default to sampling every 5th frame.
                 frame_interval = 5
@@ -139,6 +139,7 @@ class VideoFrameDataset(Dataset):
 
             # Generate a list of frame indices to sample, starting from 0 to frame_count, stepping by frame_interval.
             frame_indices = list(range(0, frame_count, frame_interval))
+            
 
             # Iterate over the sampled frame indices.
             for frame_idx in frame_indices:
@@ -158,6 +159,15 @@ class VideoFrameDataset(Dataset):
 
             # Map the video path to its list of frame indices in the video_frame_indices dictionary.
             self.video_frame_indices[video_path] = indices
+        
+        # If specified, shuffle the video paths keeping the frames in the same video together.
+        if shuffle:
+            #print("Video order before shuffling: ", list(self.video_frame_indices.keys())[:10])
+            # Shuffle the video paths
+            video_paths = list(self.video_frame_indices.keys())
+            random.shuffle(video_paths)
+            self.video_frame_indices = {path: self.video_frame_indices[path] for path in video_paths}
+            #print("Video order after shuffling: ", list(self.video_frame_indices.keys())[:10])
 
     def __len__(self):
         """
@@ -301,7 +311,7 @@ import random
 
 # Define a custom batch sampler to ensure that each batch contains frames from the same video.
 class VideoBatchSampler(Sampler):
-    def __init__(self, video_frame_indices, batch_size, shuffle=False):
+    def __init__(self, video_frame_indices, batch_size):
         """
         Initialize the batch sampler with the specified parameters.
 
@@ -312,14 +322,10 @@ class VideoBatchSampler(Sampler):
         """
         self.video_frame_indices = video_frame_indices  # Store the mapping of video paths to frame indices.
         self.batch_size = batch_size                    # Store the batch size.
-        self.shuffle = shuffle                          # Store the shuffle option.
 
         # Create a list of video paths from the keys of the video_frame_indices dictionary.
         self.video_paths = list(video_frame_indices.keys())
 
-        if shuffle:
-            # If shuffling is enabled, shuffle the order of video paths.
-            random.shuffle(self.video_paths)
 
     def __iter__(self):
         """
@@ -332,11 +338,7 @@ class VideoBatchSampler(Sampler):
         for video_path in self.video_paths:
             # Retrieve the list of frame indices for the current video.
             indices = self.video_frame_indices[video_path]
-
-            # Optionally shuffle the frame indices within the video.
-            if self.shuffle:
-                random.shuffle(indices)
-
+            
             # Generate batches of indices for the current video.
             for i in range(0, len(indices), self.batch_size):
                 # Create a batch by slicing the indices list.
@@ -393,11 +395,11 @@ if __name__ == '__main__':
     )
 
     # Print dataset statistics to provide insight into the dataset composition.
-    print("Dataset Statistics:")
-    print(f"Total number of videos: {dataset.total_videos}")
-    print(f"Total number of frames before sampling: {dataset.total_frames_before_sampling}")
-    print(f"Total number of frames after sampling: {dataset.total_frames_after_sampling}")
-    print("Frames per video before and after sampling:")
+    #print("Dataset Statistics:")
+    #print(f"Total number of videos: {dataset.total_videos}")
+    #print(f"Total number of frames before sampling: {dataset.total_frames_before_sampling}")
+    #print(f"Total number of frames after sampling: {dataset.total_frames_after_sampling}")
+    #print("Frames per video before and after sampling:")
 
     # Iterate over the videos to print per-video frame counts.
     for i, video_path in enumerate(dataset.frames_per_video_before):
@@ -405,31 +407,35 @@ if __name__ == '__main__':
         frames_before = dataset.frames_per_video_before[video_path]  # Frames before sampling.
         frames_after = dataset.frames_per_video_after[video_path]    # Frames after sampling.
 
-        if i % 100 == 0:
+        #if i % 100 == 0:
             # For large datasets, print statistics every 100 videos to avoid clutter.
-            print(f"- {video_name}: {frames_before} frames before, {frames_after} frames after sampling")
+            #print(f"- {video_name}: {frames_before} frames before, {frames_after} frames after sampling")
 
     # Set the batch size, which is the number of frames per batch from the same video.
-    batch_size = 64  # Adjust this value based on your memory constraints and requirements.
+    batch_size = 256  # Adjust this value based on your memory constraints and requirements.
 
     # Create an instance of the custom VideoBatchSampler.
     batch_sampler = VideoBatchSampler(
         dataset.video_frame_indices,     # Mapping from video paths to frame indices.
         batch_size=batch_size,           # Number of frames per batch.
-        shuffle=False                    # Whether to shuffle the frames within each video.
     )
 
     # Create a DataLoader using the dataset and the custom batch sampler.
     dataloader = DataLoader(
         dataset,                         # The dataset from which to load data.
         batch_sampler=batch_sampler,     # The custom batch sampler for batching frames.
-        num_workers=0                    # Number of subprocesses to use for data loading (0 means data will be loaded in the main process).
+        num_workers=0,                   # Number of subprocesses to use for data loading (0 means data will be loaded in the main process).
+        #drop_last=True                   # Drop the last incomplete batch if it is smaller than the specified batch size.
     )
 
     # Iterate over the DataLoader to process batches of data.
     for batch_idx, batch in enumerate(dataloader):
         # Unpack the batch into individual components.
         frames, frame_patches, depth_maps, depth_patches, frame_indices = batch
+        
+        # get the actual batch size for each batch as last batch may have less frames
+        batch_size = frames.shape[0]
+        
 
         # Print information about the current batch.
         print(f"Batch {batch_idx}:")
@@ -438,18 +444,29 @@ if __name__ == '__main__':
         print(f"Depth maps shape: {depth_maps.shape}")     # Expected shape: (batch_size, 1, 224, 224)
         print(f"Depth patches shape: {depth_patches.shape}")  # Expected shape: (batch_size, 196, 1, 16, 16)
 
+        # Calculate the grid size (number of rows and columns)
+        grid_size = int(np.ceil(np.sqrt(batch_size)))  # Round up to ensure all images fit
+
+        # --- Visualize the Frames ---
         # Prepare frames for visualization by permuting dimensions and converting to NumPy arrays.
         frames_np = frames.permute(0, 2, 3, 1).numpy()  # Shape: (batch_size, 224, 224, 3)
 
-        # Create a figure with subplots to display each frame in the batch.
-        fig, axs = plt.subplots(1, batch_size, figsize=(batch_size * 2, 2))
+        # Create a figure with a grid of subplots to display each frame in the batch.
+        fig, axs = plt.subplots(grid_size, grid_size, figsize=(grid_size * 2, grid_size * 2))
+
+        # Flatten the axs array for easy indexing.
+        axs = axs.flatten()
 
         # Iterate over each frame in the batch to display it.
         for idx in range(batch_size):
-            ax = axs[idx] if batch_size > 1 else axs  # Handle the case when batch_size is 1.
-            ax.imshow(frames_np[idx])                 # Display the frame image.
-            ax.axis('off')                            # Hide axis ticks and labels.
-            ax.set_title(f"Frame {frame_indices[idx].item()} from Video {batch_idx}")  # Set the subplot title.
+            ax = axs[idx]                          # Get the appropriate subplot axis.
+            ax.imshow(frames_np[idx])              # Display the frame image.
+            ax.axis('off')                         # Hide axis ticks and labels.
+            ax.set_title(f"Frame {frame_indices[idx].item()}")  # Set the subplot title.
+
+        # Turn off any unused subplots.
+        for idx in range(batch_size, grid_size * grid_size):
+            axs[idx].axis('off')  # Hide axes without images.
 
         # Set the overall title for the figure.
         plt.suptitle(f"Frames from the same video in Batch {batch_idx}")
@@ -460,18 +477,26 @@ if __name__ == '__main__':
         # Display the figure containing the frames.
         plt.show()
 
+        # --- Visualize the Depth Maps ---
         # Prepare depth maps for visualization by removing the channel dimension.
         depth_maps_np = depth_maps.squeeze(1).numpy()  # Shape: (batch_size, 224, 224)
 
-        # Create a figure with subplots to display each depth map in the batch.
-        fig, axs = plt.subplots(1, batch_size, figsize=(batch_size * 2, 2))
+        # Create a figure with a grid of subplots to display each depth map in the batch.
+        fig, axs = plt.subplots(grid_size, grid_size, figsize=(grid_size * 2, grid_size * 2))
+
+        # Flatten the axs array for easy indexing.
+        axs = axs.flatten()
 
         # Iterate over each depth map in the batch to display it.
         for idx in range(batch_size):
-            ax = axs[idx] if batch_size > 1 else axs
+            ax = axs[idx]                           # Get the appropriate subplot axis.
             ax.imshow(depth_maps_np[idx], cmap='magma')  # Display the depth map using the 'magma' colormap.
-            ax.axis('off')
-            ax.set_title(f"Depth Map {frame_indices[idx].item()}")
+            ax.axis('off')                          # Hide axis ticks and labels.
+            ax.set_title(f"Depth Map {frame_indices[idx].item()}")  # Set the subplot title.
+
+        # Turn off any unused subplots.
+        for idx in range(batch_size, grid_size * grid_size):
+            axs[idx].axis('off')  # Hide axes without images.
 
         # Set the overall title for the figure.
         plt.suptitle(f"Depth Maps from the same video in Batch {batch_idx}")
