@@ -69,6 +69,7 @@ class VideoFrameDataset(Dataset):
         self.video_folder = video_folder          # Store the video folder path.
         self.transform = transform                # Store the transformation function.
         self.depth_model = depth_model            # Store the depth estimation model.
+        self.shuffle = shuffle                         # Store the shuffle flag.
 
         # Initialize statistics for dataset analysis.
         self.total_videos = 0                     # Total number of videos in the dataset.
@@ -311,7 +312,7 @@ import random
 
 # Define a custom batch sampler to ensure that each batch contains frames from the same video.
 class VideoBatchSampler(Sampler):
-    def __init__(self, video_frame_indices, batch_size):
+    def __init__(self, video_frame_indices, batch_size, shuffle=True):
         """
         Initialize the batch sampler with the specified parameters.
 
@@ -322,9 +323,14 @@ class VideoBatchSampler(Sampler):
         """
         self.video_frame_indices = video_frame_indices  # Store the mapping of video paths to frame indices.
         self.batch_size = batch_size                    # Store the batch size.
+        self.shuffle = shuffle                            # Store the shuffle flag.
 
         # Create a list of video paths from the keys of the video_frame_indices dictionary.
         self.video_paths = list(video_frame_indices.keys())
+        
+        if shuffle:
+            # If shuffling is enabled, shuffle the order of video paths each time the sampler is initialized. so every batch will have frames from different videos
+            random.shuffle(self.video_paths)
 
 
     def __iter__(self):
@@ -412,12 +418,13 @@ if __name__ == '__main__':
             #print(f"- {video_name}: {frames_before} frames before, {frames_after} frames after sampling")
 
     # Set the batch size, which is the number of frames per batch from the same video.
-    batch_size = 256  # Adjust this value based on your memory constraints and requirements.
+    batch_size = 16  # Adjust this value based on your memory constraints and requirements.
 
     # Create an instance of the custom VideoBatchSampler.
     batch_sampler = VideoBatchSampler(
         dataset.video_frame_indices,     # Mapping from video paths to frame indices.
         batch_size=batch_size,           # Number of frames per batch.
+        shuffle=False                     # Whether to shuffle the data from batch to batch.
     )
 
     # Create a DataLoader using the dataset and the custom batch sampler.
@@ -425,6 +432,7 @@ if __name__ == '__main__':
         dataset,                         # The dataset from which to load data.
         batch_sampler=batch_sampler,     # The custom batch sampler for batching frames.
         num_workers=0,                   # Number of subprocesses to use for data loading (0 means data will be loaded in the main process).
+        #shuffle=True,                    # Shuffle the paths of videos before sampling frames.
         #drop_last=True                   # Drop the last incomplete batch if it is smaller than the specified batch size.
     )
 
