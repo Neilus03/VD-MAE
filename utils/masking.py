@@ -86,11 +86,29 @@ def random_temporal_masking(mask_ratio, frames, patch_size):
 
 if __name__ == "__main__":
     # Test
-    rgb_frame_sequence = torch.randn(4, 3, 64, 64)
-    mask_ratio = 0.75
+    rgb_frame_sequence = torch.randn(4, 3, 224, 224)
+    mask_ratio = 0.95
     random_tube = tubemasking(mask_ratio, rgb_frame_sequence, patch_size=16, mask_type='random')
-    random_block = tubemasking(mask_ratio, rgb_frame_sequence, patch_size=16, mask_type='block')
+    random_block = tubemasking(mask_ratio, rgb_frame_sequence, patch_size=16, mask_type='random')
     random_temporal = random_temporal_masking(mask_ratio, rgb_frame_sequence, patch_size=16)
+    
+    #save random tube figure as image
+    import matplotlib.pyplot as plt
+    fig = plt.figure()
+    for i in range(4):
+        plt.subplot(2, 2, i+1)
+        plt.imshow(random_tube[i, 0].detach().numpy(), cmap='gray')
+    plt.savefig('random_tube.png')
+    plt.close(fig)
+    
+    #save random temporal figure as image
+    fig = plt.figure()
+    for i in range(4):
+        plt.subplot(2, 2, i+1)
+        plt.imshow(random_temporal[i, 0].detach().numpy(), cmap='gray')
+    plt.savefig('random_temporal.png')
+    plt.close(fig)
+    
     print('Random Tube Masking:', random_tube.shape)
     print(random_tube)
     print('Random Temporal Masking:', random_temporal.shape)
