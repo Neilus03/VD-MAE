@@ -483,7 +483,7 @@ if __name__ == '__main__':
         plt.tight_layout()
 
         # Display the figure containing the frames.
-        plt.imsave(f"frames_batch_{batch_idx}.png", frames_np[0])
+        plt.savefig(f"frames_batch_{batch_idx}.png")
 
         # --- Visualize the Depth Maps ---
         # Prepare depth maps for visualization by removing the channel dimension.
@@ -513,7 +513,7 @@ if __name__ == '__main__':
         plt.tight_layout()
 
         # Display the figure containing the depth maps.
-        plt.imsave(f"depth_maps_batch_{batch_idx}.png", depth_maps_np[0], cmap='viridis')
+        plt.savefig(f"depth_maps_batch_{batch_idx}.png")
 
         # Visualize the patches of the first frame in the batch.
         fig, axs = plt.subplots(14, 14, figsize=(20, 20))  # Create a 14x14 grid of subplots.
@@ -540,8 +540,8 @@ if __name__ == '__main__':
         # Adjust layout to prevent overlap.
         plt.tight_layout()
 
-        # Display the figure containing the patches.
-        plt.imsave(f"frame_patches_batch_{batch_idx}.png", frame_patches[0].permute(1, 2, 0).numpy())
+        # Save the figure containing the frame patches.
+        plt.savefig(f"frame_patches_batch_{batch_idx}.png")
 
         # For testing purposes, limit the processing to 10 batches.
         if batch_idx == 10:
