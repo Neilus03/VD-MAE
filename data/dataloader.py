@@ -386,7 +386,7 @@ if __name__ == '__main__':
     ])
 
     # Specify the path to the folder containing video files.
-    video_folder = '../sports_videos'  # Replace with your actual folder path.
+    video_folder = config['data']['finevideo_path']+ '/sports_videos' if config['data']['finevideo_path'] else '../sports_videos'
 
     # Check if the specified video folder exists.
     if not os.path.exists(video_folder):
