@@ -20,5 +20,5 @@ training:
 
 data:
   depth_model_checkpoint: /home/ndelafuente/VD-MAE/depth_anything_v2/checkpoints/depth_anything_v2_vitl.pth
-
+  finevideo_path: /data/datasets/finevideo
 
