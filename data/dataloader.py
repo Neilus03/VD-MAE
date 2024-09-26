@@ -6,6 +6,8 @@ from torchvision import transforms
 import matplotlib.pyplot as plt
 import numpy as np
 import warnings
+from torch.utils.data.sampler import Sampler
+import random
 
 # Import necessary modules and libraries:
 # - os: For interacting with the operating system (e.g., file paths).
@@ -319,19 +321,25 @@ class VideoBatchSampler(Sampler):
         Parameters:
         - video_frame_indices (dict): Mapping from video paths to lists of frame indices.
         - batch_size (int): Number of frames per batch.
-        - shuffle (bool): Whether to shuffle the frames within each video.
+        - shuffle (bool): Whether to shuffle the batches.
         """
-        self.video_frame_indices = video_frame_indices  # Store the mapping of video paths to frame indices.
         self.batch_size = batch_size                    # Store the batch size.
-        self.shuffle = shuffle                            # Store the shuffle flag.
+        self.shuffle = shuffle                          # Store the shuffle flag.
 
-        # Create a list of video paths from the keys of the video_frame_indices dictionary.
-        self.video_paths = list(video_frame_indices.keys())
-        
+        # Build a list of batches
+        self.batches = []
+
+        for video_path, indices in video_frame_indices.items():
+            # Ensure indices are sorted to maintain frame order within a batch
+            indices = sorted(indices)
+            # Split indices into batches
+            for i in range(0, len(indices), batch_size):
+                batch = indices[i:i + batch_size]
+                self.batches.append(batch)
+
+        # Shuffle the list of batches if shuffle is True
         if shuffle:
-            # If shuffling is enabled, shuffle the order of video paths each time the sampler is initialized. so every batch will have frames from different videos
-            random.shuffle(self.video_paths)
-
+            random.shuffle(self.batches)
 
     def __iter__(self):
         """
@@ -340,36 +348,15 @@ class VideoBatchSampler(Sampler):
         Yields:
         - batch (list): A list of frame indices representing a batch.
         """
-        # Iterate over each video path.
-        for video_path in self.video_paths:
-            # Retrieve the list of frame indices for the current video.
-            indices = self.video_frame_indices[video_path]
-            
-            # Generate batches of indices for the current video.
-            for i in range(0, len(indices), self.batch_size):
-                # Create a batch by slicing the indices list.
-                batch = indices[i:i + self.batch_size]
-
-                # Yield the batch of indices.
-                yield batch
+        for batch in self.batches:
+            yield batch
 
     def __len__(self):
         """
-        Return the total number of batches across all videos.
+        Return the total number of batches.
         """
-        total_batches = 0  # Initialize a counter for the total number of batches.
-
-        # Iterate over the lists of indices for each video.
-        for indices in self.video_frame_indices.values():
-            # Calculate the number of batches for the current video.
-            num_batches = (len(indices) + self.batch_size - 1) // self.batch_size
-
-            # Add the number of batches to the total count.
-            total_batches += num_batches
-
-        # Return the total number of batches.
-        return total_batches
-
+        return len(self.batches)
+    
 if __name__ == '__main__':
     import random
     import matplotlib.pyplot as plt
@@ -420,20 +407,18 @@ if __name__ == '__main__':
     # Set the batch size, which is the number of frames per batch from the same video.
     batch_size = 16  # Adjust this value based on your memory constraints and requirements.
 
-    # Create an instance of the custom VideoBatchSampler.
+    # Create an instance of the custom VideoBatchSampler with shuffle enabled.
     batch_sampler = VideoBatchSampler(
         dataset.video_frame_indices,     # Mapping from video paths to frame indices.
         batch_size=batch_size,           # Number of frames per batch.
-        shuffle=False                     # Whether to shuffle the data from batch to batch.
+        shuffle=True                     # Enable shuffling of batches.
     )
 
     # Create a DataLoader using the dataset and the custom batch sampler.
     dataloader = DataLoader(
         dataset,                         # The dataset from which to load data.
         batch_sampler=batch_sampler,     # The custom batch sampler for batching frames.
-        num_workers=0,                   # Number of subprocesses to use for data loading (0 means data will be loaded in the main process).
-        #shuffle=True,                    # Shuffle the paths of videos before sampling frames.
-        #drop_last=True                   # Drop the last incomplete batch if it is smaller than the specified batch size.
+        num_workers=0,                   # Number of subprocesses to use for data loading.
     )
 
     # Iterate over the DataLoader to process batches of data.
