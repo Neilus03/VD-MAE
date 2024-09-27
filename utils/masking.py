@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import numpy as np
 import random
+import matplotlib.pyplot as plt
 
 def tubemasking(mask_ratio, frames, patch_size, mask_type='random'):
     """
@@ -84,12 +85,39 @@ def random_temporal_masking(mask_ratio, frames, patch_size):
     return mask
 
 
+def plot_mask(mask, title, save_name):
+    """
+    Plot and save the mask as an image. Each batch (B) is visualized separately.
+    
+    mask: The mask tensor (B, C, H_patches, W_patches)
+    title: The title of the plot
+    save_name: File name for saving the plot
+    """
+    
+    # Extract batch size (B) and height, width patches
+    B, C, H_patches, W_patches = mask.size()
+
+    plt.figure(figsize=(10, 10))
+
+    # Plot each batch (B) feature map, taking the first channel (C=0)
+    for b in range(B):
+        mask_np = mask[b, 0].cpu().numpy()  # Extract the first channel for each batch sample
+        
+        plt.subplot(1, B, b + 1)
+        plt.imshow(mask_np, cmap='gray', interpolation='nearest')
+        plt.title(f"{title} - Batch {b+1}")
+        plt.axis('off')
+    
+    plt.tight_layout()
+    plt.savefig(save_name)
+    plt.close()
+
+
 if __name__ == "__main__":
     # Test
     rgb_frame_sequence = torch.randn(4, 3, 224, 224)
     mask_ratio = 0.95
     random_tube = tubemasking(mask_ratio, rgb_frame_sequence, patch_size=16, mask_type='random')
-    random_block = tubemasking(mask_ratio, rgb_frame_sequence, patch_size=16, mask_type='random')
     random_temporal = random_temporal_masking(mask_ratio, rgb_frame_sequence, patch_size=16)
     
     #save random tube figure as image
@@ -113,3 +141,5 @@ if __name__ == "__main__":
     print(random_tube)
     print('Random Temporal Masking:', random_temporal.shape)
     print(random_temporal)
+    plot_mask(random_tube, 'Random Tube Masking', 'random_tube_mask.png')
+    plot_mask(random_temporal, 'Random Temporal Masking', 'random_temporal_mask.png')
