@@ -4,142 +4,139 @@ import numpy as np
 import random
 import matplotlib.pyplot as plt
 
-def tubemasking(mask_ratio, frames, patch_size, mask_type='random'):
-    """
-    Apply tube masking to the input patches for the whole batch (frame sequence)
-    
-    mask_ratio: float -> ~85%
-    frames: (B, C, H, W)
-    patch_size: int -> 16
-    mask_type: str -> 'random' or 'block'
-    """
+class MaskingGenerator:
+    def __init__(self, input_size, mask_ratio):
+        """
+        Initialize the Tube Masking Generator class
+        Args:
+            input_size: Tuple (num_frames, num_patches_H, num_patches_W)
+            mask_ratio: float -> ~85%
+        """
 
-    (B, C, H, W) = frames.size()
+        self.frames, self.height, self.width = input_size
+        self.num_patches_per_frame = self.height * self.width
+        self.total_patches = self.frames * self.num_patches_per_frame
+        self.num_masks_per_frame = int(mask_ratio * self.num_patches_per_frame)
+        self.total_masks = self.frames * self.num_masks_per_frame
 
-    # Calculate the number of patches along height and width
-    H_patches = H // patch_size
-    W_patches = W // patch_size
-    
-    # Create the mask shape (only for the spatial dimensions H_patches, W_patches)
-    mask_shape = (H_patches, W_patches)  # mask will be the same for all B and C dimensions
-    
-    # Calculate the number of patches to be masked based on the masking ratio
-    total_patches = H_patches * W_patches
-    num_masked_patches = int(mask_ratio * total_patches)
+    def __repr__(self):
+        """
+        Return the string representation of the class
+        """
 
-    if mask_type == "random":
-        # Create a random mask for spatial dimensions (H_patches, W_patches)
-        mask = torch.ones(mask_shape, dtype=torch.float32)
-        masked_indices = torch.randperm(total_patches)[:num_masked_patches]
-        
-        # Convert flat indices to 2D (H_patches, W_patches) indices
-        mask_view = mask.view(-1)
-        mask_view[masked_indices] = 0
-        mask = mask.view(mask_shape)
-    
-    elif mask_type == "block":
-        raise NotImplementedError("Block masking is not implemented yet")
-    
-    else:
-        raise ValueError("mask_type must be either 'random' or 'block'")
-    
-    # Expand mask along the batch dimension (same mask for all B samples)
-    mask = mask.expand(B, C, H_patches, W_patches)
-    
-    return mask
-    
+        repr_str = "Masks: total patches {}, mask patches {}".format(
+            self.total_patches, self.total_masks
+        )
+        return repr_str
 
-def random_temporal_masking(mask_ratio, frames, patch_size):
-    """
-    Apply random temporal masking to the input patches for the whole batch (frame sequence)
+
+class TubeMaskingGenerator(MaskingGenerator):
     
-    mask_ratio: float -> ~85%
-    frames: (B, C, H, W)
-    patch_size: int -> 16
-    """
+    def __call__(self):
+        """
+        Generate the tube mask for the entire batch
+        Returns:
+            mask: A binary mask tensor of shape (frames, num_patches_H, num_patches_W)
+        """
 
-    (B, C, H, W) = frames.size()
+        mask_per_frame = np.hstack([
+            np.zeros(self.num_patches_per_frame - self.num_masks_per_frame),
+            np.ones(self.num_masks_per_frame),
+        ])
+        np.random.shuffle(mask_per_frame)
+        mask_per_frame = mask_per_frame.reshape(self.height, self.width)
+        mask = np.tile(mask_per_frame, (self.frames, 1, 1))
 
-    # Calculate the number of patches along height and width
-    H_patches = H // patch_size
-    W_patches = W // patch_size
-    
-    # Create the mask shape (B, C, H_patches, W_patches)
-    mask_shape = (B, C, H_patches, W_patches)
-    
-    # Calculate the number of patches to mask along the B dimension
-    num_masked_patches = int(mask_ratio * B)
+        return mask
 
-    # Initialize the mask with ones (all unmasked initially)
-    mask = torch.ones(mask_shape, dtype=torch.float32)
 
-    # For each patch position (h, w), mask random indices along the B dimension
-    for h in range(H_patches):
-        for w in range(W_patches):
-            # For each (h, w) position, randomly mask `num_masked_patches` along B
-            masked_indices = torch.randperm(B)[:num_masked_patches]
-            
-            # Set the selected B indices to 0 (masked) for ALL C channels at this (h, w) location
-            mask[masked_indices, :, h, w] = 0
+class RandomMaskingGenerator(MaskingGenerator):
 
-    return mask
+    def __call__(self):
+        """
+        Generate the random temporal mask for the entire batch.
+        Returns:
+            mask: A binary mask tensor of shape (frames, num_patches_H, num_patches_W)
+                  where each patch (from the spatial dimension) is masked across time (frames)
+                  in proportion to the mask_ratio.
+        """
+
+        mask = np.zeros((self.frames, self.num_patches_per_frame), dtype=np.float32)
+        num_masks_per_patch = int(self.frames * (self.num_masks_per_frame / self.num_patches_per_frame))
+
+        for patch_idx in range(self.num_patches_per_frame):
+            frame_mask = np.hstack([
+                np.zeros(self.frames - num_masks_per_patch),
+                np.ones(num_masks_per_patch),
+            ])
+            np.random.shuffle(frame_mask)
+
+            mask[:, patch_idx] = frame_mask
+        mask = mask.reshape(self.frames, self.height, self.width)
+
+        return mask
 
 
 def plot_mask(mask, title, save_name):
     """
-    Plot and save the mask as an image. Each batch (B) is visualized separately.
+    Plot and save the mask as an image in a grid layout. Each frame is visualized separately.
     
-    mask: The mask tensor (B, C, H_patches, W_patches)
+    mask: The mask numpy array (frames, H_patches, W_patches)
     title: The title of the plot
     save_name: File name for saving the plot
     """
-    
-    # Extract batch size (B) and height, width patches
-    B, C, H_patches, W_patches = mask.size()
 
-    plt.figure(figsize=(10, 10))
+    frames, H_patches, W_patches = mask.shape
 
-    # Plot each batch (B) feature map, taking the first channel (C=0)
-    for b in range(B):
-        mask_np = mask[b, 0].cpu().numpy()  # Extract the first channel for each batch sample
-        
-        plt.subplot(1, B, b + 1)
-        plt.imshow(mask_np, cmap='gray', interpolation='nearest')
-        plt.title(f"{title} - Batch {b+1}")
-        plt.axis('off')
-    
-    plt.tight_layout()
+    grid_size = int(np.ceil(np.sqrt(frames)))
+    fig, axes = plt.subplots(grid_size, grid_size, figsize=(12, 12))
+
+    for frame in range(frames):
+        row, col = divmod(frame, grid_size)
+        mask_frame = mask[frame]
+
+        axes[row, col].imshow(mask_frame, cmap='gray', interpolation='nearest')
+        axes[row, col].set_title(f"Frame {frame+1}")
+        axes[row, col].axis('off')
+
+    for idx in range(frames, grid_size * grid_size):
+        fig.delaxes(axes.flatten()[idx])
+
+    plt.suptitle(title, fontsize=16)
+    plt.tight_layout(rect=[0, 0, 1, 0.95])
     plt.savefig(save_name)
     plt.close()
 
 
 if __name__ == "__main__":
-    # Test
-    rgb_frame_sequence = torch.randn(4, 3, 224, 224)
-    mask_ratio = 0.95
-    random_tube = tubemasking(mask_ratio, rgb_frame_sequence, patch_size=16, mask_type='random')
-    random_temporal = random_temporal_masking(mask_ratio, rgb_frame_sequence, patch_size=16)
-    
-    #save random tube figure as image
-    import matplotlib.pyplot as plt
-    fig = plt.figure()
-    for i in range(4):
-        plt.subplot(2, 2, i+1)
-        plt.imshow(random_tube[i, 0].detach().numpy(), cmap='gray')
-    plt.savefig('random_tube.png')
-    plt.close(fig)
-    
-    #save random temporal figure as image
-    fig = plt.figure()
-    for i in range(4):
-        plt.subplot(2, 2, i+1)
-        plt.imshow(random_temporal[i, 0].detach().numpy(), cmap='gray')
-    plt.savefig('random_temporal.png')
-    plt.close(fig)
-    
-    print('Random Tube Masking:', random_tube.shape)
-    print(random_tube)
-    print('Random Temporal Masking:', random_temporal.shape)
-    print(random_temporal)
-    plot_mask(random_tube, 'Random Tube Masking', 'random_tube_mask.png')
-    plot_mask(random_temporal, 'Random Temporal Masking', 'random_temporal_mask.png')
+
+    rgb_frame_sequence = torch.randn(16, 3, 224, 224)  # Simulating a 16-frame RGB sequence
+    mask_ratio = 0.85
+    patch_size = 16
+
+    H_patches = 224 // patch_size
+    W_patches = 224 // patch_size
+
+    # Tube masking
+    tube_mask_generator = TubeMaskingGenerator(input_size=(rgb_frame_sequence.shape[0], H_patches, W_patches), mask_ratio=mask_ratio)
+    random_tube_mask = tube_mask_generator()
+
+    total_masked_tube = int(np.sum(random_tube_mask))
+    total_unmasked_tube = (rgb_frame_sequence.shape[0] * H_patches * W_patches) - total_masked_tube
+
+    print(f'Tube Masking:')
+    print(f'Total masked patches: {total_masked_tube}')
+    print(f'Total unmasked patches: {total_unmasked_tube}')
+    print('Random Tube Masking (3D):', random_tube_mask.shape)
+
+    # Random masking
+    random_mask_generator = RandomMaskingGenerator(input_size=(rgb_frame_sequence.shape[0], H_patches, W_patches), mask_ratio=mask_ratio)
+    random_mask = random_mask_generator()
+
+    total_masked_random = int(np.sum(random_mask))
+    total_unmasked_random = (rgb_frame_sequence.shape[0] * H_patches * W_patches) - total_masked_random
+
+    print(f'\nRandom Masking:')
+    print(f'Total masked patches: {total_masked_random}')
+    print(f'Total unmasked patches: {total_unmasked_random}')
+    print('Random Masking (3D):', random_mask.shape)
