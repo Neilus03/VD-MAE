@@ -4,7 +4,7 @@ import numpy as np
 import random
 import matplotlib.pyplot as plt
 
-def tubemasking(mask_ratio, frames, patch_size, mask_type='random'):
+def tubemasking(mask_ratio, frames, patch_size, mask_type='random', seed = 42):
     """
     Apply tube masking to the input patches for the whole batch (frame sequence)
     
@@ -13,6 +13,9 @@ def tubemasking(mask_ratio, frames, patch_size, mask_type='random'):
     patch_size: int -> 16
     mask_type: str -> 'random' or 'block'
     """
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    
 
     (B, C, H, W) = frames.size()
 
@@ -82,6 +85,8 @@ def random_temporal_masking(mask_ratio, frames, patch_size):
             # Set the selected B indices to 0 (masked) for ALL C channels at this (h, w) location
             mask[masked_indices, :, h, w] = 0
 
+    frames = frames * mask
+
     return mask
 
 
@@ -116,9 +121,12 @@ def plot_mask(mask, title, save_name):
 if __name__ == "__main__":
     # Test
     rgb_frame_sequence = torch.randn(4, 3, 224, 224)
+    depth_frame_sequence = torch.randn(4, 1, 224, 224)
     mask_ratio = 0.95
     random_tube = tubemasking(mask_ratio, rgb_frame_sequence, patch_size=16, mask_type='random')
     random_temporal = random_temporal_masking(mask_ratio, rgb_frame_sequence, patch_size=16)
+    random_tube_depth = tubemasking(mask_ratio, depth_frame_sequence, patch_size=16, mask_type='random')
+    random_temporal_depth = random_temporal_masking(mask_ratio, depth_frame_sequence, patch_size=16)
     
     #save random tube figure as image
     import matplotlib.pyplot as plt
