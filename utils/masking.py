@@ -109,7 +109,7 @@ def plot_mask(mask, title, save_name):
 if __name__ == "__main__":
 
     rgb_frame_sequence = torch.randn(16, 3, 224, 224)  # Simulating a 16-frame RGB sequence
-    mask_ratio = 0.85
+    mask_ratio = 0.75
     patch_size = 16
 
     H_patches = 224 // patch_size
