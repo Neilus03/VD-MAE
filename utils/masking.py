@@ -1,10 +1,8 @@
 import torch 
-import torch.nn as nn
 import numpy as np
-import random
 import matplotlib.pyplot as plt
 
-def tubemasking(mask_ratio, frames, patch_size, mask_type='random', seed = 42):
+def tubemasking(mask_ratio, frames, patch_size, mask_type='random'):
     """
     Apply tube masking to the input patches for the whole batch (frame sequence)
     
@@ -13,9 +11,6 @@ def tubemasking(mask_ratio, frames, patch_size, mask_type='random', seed = 42):
     patch_size: int -> 16
     mask_type: str -> 'random' or 'block'
     """
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed(seed)
-    
 
     (B, C, H, W) = frames.size()
 
@@ -52,68 +47,60 @@ def tubemasking(mask_ratio, frames, patch_size, mask_type='random', seed = 42):
     return mask
     
 
-def random_temporal_masking(mask_ratio, frames, patch_size):
-    """
-    Apply random temporal masking to the input patches for the whole batch (frame sequence)
-    
-    mask_ratio: float -> ~85%
-    frames: (B, C, H, W)
-    patch_size: int -> 16
-    """
+class RandomMaskingGenerator(MaskingGenerator):
 
-    (B, C, H, W) = frames.size()
+    def __call__(self):
+        """
+        Generate the random temporal mask for the entire batch.
+        Returns:
+            mask: A binary mask tensor of shape (frames, num_patches_H, num_patches_W)
+                  where each patch (from the spatial dimension) is masked across time (frames)
+                  in proportion to the mask_ratio.
+        """
 
-    # Calculate the number of patches along height and width
-    H_patches = H // patch_size
-    W_patches = W // patch_size
-    
-    # Create the mask shape (B, C, H_patches, W_patches)
-    mask_shape = (B, C, H_patches, W_patches)
-    
-    # Calculate the number of patches to mask along the B dimension
-    num_masked_patches = int(mask_ratio * B)
+        mask = np.zeros((self.frames, self.num_patches_per_frame), dtype=np.float32)
+        num_masks_per_patch = int(self.frames * (self.num_masks_per_frame / self.num_patches_per_frame))
 
-    # Initialize the mask with ones (all unmasked initially)
-    mask = torch.ones(mask_shape, dtype=torch.float32)
+        for patch_idx in range(self.num_patches_per_frame):
+            frame_mask = np.hstack([
+                np.zeros(self.frames - num_masks_per_patch),
+                np.ones(num_masks_per_patch),
+            ])
+            np.random.shuffle(frame_mask)
 
-    # For each patch position (h, w), mask random indices along the B dimension
-    for h in range(H_patches):
-        for w in range(W_patches):
-            # For each (h, w) position, randomly mask `num_masked_patches` along B
-            masked_indices = torch.randperm(B)[:num_masked_patches]
-            
-            # Set the selected B indices to 0 (masked) for ALL C channels at this (h, w) location
-            mask[masked_indices, :, h, w] = 0
-
-    frames = frames * mask
+            mask[:, patch_idx] = frame_mask
+        mask = mask.reshape(self.frames, self.height, self.width)
 
     return mask
 
 
 def plot_mask(mask, title, save_name):
     """
-    Plot and save the mask as an image. Each batch (B) is visualized separately.
+    Plot and save the mask as an image in a grid layout. Each frame is visualized separately.
     
-    mask: The mask tensor (B, C, H_patches, W_patches)
+    mask: The mask numpy array (frames, H_patches, W_patches)
     title: The title of the plot
     save_name: File name for saving the plot
     """
-    
-    # Extract batch size (B) and height, width patches
-    B, C, H_patches, W_patches = mask.size()
 
-    plt.figure(figsize=(10, 10))
+    frames, H_patches, W_patches = mask.shape
 
-    # Plot each batch (B) feature map, taking the first channel (C=0)
-    for b in range(B):
-        mask_np = mask[b, 0].cpu().numpy()  # Extract the first channel for each batch sample
-        
-        plt.subplot(1, B, b + 1)
-        plt.imshow(mask_np, cmap='gray', interpolation='nearest')
-        plt.title(f"{title} - Batch {b+1}")
-        plt.axis('off')
-    
-    plt.tight_layout()
+    grid_size = int(np.ceil(np.sqrt(frames)))
+    fig, axes = plt.subplots(grid_size, grid_size, figsize=(12, 12))
+
+    for frame in range(frames):
+        row, col = divmod(frame, grid_size)
+        mask_frame = mask[frame]
+
+        axes[row, col].imshow(mask_frame, cmap='gray', interpolation='nearest')
+        axes[row, col].set_title(f"Frame {frame+1}")
+        axes[row, col].axis('off')
+
+    for idx in range(frames, grid_size * grid_size):
+        fig.delaxes(axes.flatten()[idx])
+
+    plt.suptitle(title, fontsize=16)
+    plt.tight_layout(rect=[0, 0, 1, 0.95])
     plt.savefig(save_name)
     plt.close()
 
@@ -121,12 +108,9 @@ def plot_mask(mask, title, save_name):
 if __name__ == "__main__":
     # Test
     rgb_frame_sequence = torch.randn(4, 3, 224, 224)
-    depth_frame_sequence = torch.randn(4, 1, 224, 224)
     mask_ratio = 0.95
     random_tube = tubemasking(mask_ratio, rgb_frame_sequence, patch_size=16, mask_type='random')
     random_temporal = random_temporal_masking(mask_ratio, rgb_frame_sequence, patch_size=16)
-    random_tube_depth = tubemasking(mask_ratio, depth_frame_sequence, patch_size=16, mask_type='random')
-    random_temporal_depth = random_temporal_masking(mask_ratio, depth_frame_sequence, patch_size=16)
     
     #save random tube figure as image
     import matplotlib.pyplot as plt
