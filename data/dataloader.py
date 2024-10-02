@@ -6,7 +6,6 @@ from torchvision import transforms
 import matplotlib.pyplot as plt
 import numpy as np
 import warnings
-from torch.utils.data.sampler import Sampler
 import random
 
 # Import necessary modules and libraries:
@@ -59,7 +58,7 @@ depth_model = depth_model.to(DEVICE).eval()
 
 # Define a custom dataset class that inherits from PyTorch's Dataset class.
 class VideoFrameDataset(Dataset):
-    def __init__(self, video_folder, transform=None, depth_model=None, shuffle=True):
+    def __init__(self, video_folder, transform=None, depth_model=None, num_frames=32, frame_interval=1):
         """
         Initialize the dataset with the specified parameters.
 
@@ -67,40 +66,35 @@ class VideoFrameDataset(Dataset):
         - video_folder (str): Path to the folder containing video files.
         - transform (callable, optional): Transformations to apply to each frame.
         - depth_model (nn.Module, optional): Pre-loaded depth estimation model.
+        - num_frames (int): Number of frames to sample per sequence.
+        - frame_interval (int): Interval at which frames are sampled (e.g., every nth frame).
         """
         self.video_folder = video_folder          # Store the video folder path.
         self.transform = transform                # Store the transformation function.
         self.depth_model = depth_model            # Store the depth estimation model.
-        self.shuffle = shuffle                         # Store the shuffle flag.
+        self.num_frames = num_frames              # Number of frames per sequence.
+        self.frame_interval = frame_interval      # Interval at which frames are sampled.
 
-        # Initialize statistics for dataset analysis.
-        self.total_videos = 0                     # Total number of videos in the dataset.
-        self.total_frames_before_sampling = 0     # Total number of frames before sampling.
-        self.total_frames_after_sampling = 0      # Total number of frames after sampling.
-        self.frames_per_video_before = {}         # Dictionary mapping video paths to frame counts before sampling.
-        self.frames_per_video_after = {}          # Dictionary mapping video paths to frame counts after sampling.
+        # Initialize data structures for video paths and frame counts.
+        self.video_paths = []                     # List to store video file paths.
+        self.video_frame_counts = {}              # Dictionary mapping video paths to frame counts.
+        self.video_sequence_indices = []          # List to store (video_path, sequence_start_frame_idx) tuples.
 
-        # Initialize data structures for frame indexing.
-        self.frame_info = []                      # List to store tuples of (video_path, frame_idx) for each frame.
-        self.video_frame_indices = {}             # Dictionary mapping video paths to lists of frame indices.
+        # Build the list of video paths and frame counts.
+        self._build_video_list()
 
-        # Build the index of frames across all videos in the dataset.
-        self._build_frame_index()
+        # Build the list of sequences for each video.
+        self._build_sequence_indices()
 
-    def _build_frame_index(self, shuffle=True):
+    def _build_video_list(self):
         """
-        Build an index of all frames from all videos in the specified folder.
-        This method populates self.frame_info and self.video_frame_indices.
+        Build a list of video file paths and their corresponding frame counts.
         """
         # Create a list of full paths to video files in the video folder.
         video_files = [
             os.path.join(self.video_folder, f) for f in os.listdir(self.video_folder)
             if f.endswith(('.mp4', '.avi', '.mov'))  # Include only specified video file extensions.
         ]
-        idx = 0  # Initialize a global index counter for frames.
-
-        # Update the total number of videos.
-        self.total_videos = len(video_files)
 
         # Iterate over each video file to process its frames.
         for video_path in video_files:
@@ -114,9 +108,6 @@ class VideoFrameDataset(Dataset):
             # Retrieve the total number of frames in the video.
             frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
-            # Retrieve the frames per second (fps) of the video.
-            fps = cap.get(cv2.CAP_PROP_FPS)
-
             # Release the video capture object.
             cap.release()
 
@@ -124,104 +115,118 @@ class VideoFrameDataset(Dataset):
                 # If the video has zero frames, skip it.
                 continue
 
-            # Update statistics for frames before sampling.
-            self.total_frames_before_sampling += frame_count
-            self.frames_per_video_before[video_path] = frame_count
+            # Store the video path and frame count.
+            self.video_paths.append(video_path)
+            self.video_frame_counts[video_path] = frame_count
 
-            # Calculate the frame interval to sample frames at 1/5 of the original fps.
-            if fps > 0:
-                # If fps is available and valid, calculate the frame interval.
-                frame_interval = max(1, int(round(fps / 5)))  # Scale down fps to 1/5.
-            else:
-                # If fps is not available, default to sampling every 5th frame.
-                frame_interval = 5
-                print(f"Warning: FPS not available for video {video_path}. Assuming frame interval of {frame_interval}.")
+        # Debugging print statements.
+        print(f"Total number of videos: {len(self.video_paths)}")
 
-            # Initialize a list to store indices for frames in this video.
-            indices = []
+    def _build_sequence_indices(self):
+        """
+        Build a list of (video_path, sequence_start_frame_idx) tuples for sampling sequences.
+        Sequences are non-overlapping and start from the beginning of the video.
+        """
+        for video_path in self.video_paths:
+            total_frames = self.video_frame_counts[video_path]
+            # Adjust total frames based on frame_interval.
+            effective_total_frames = total_frames // self.frame_interval
 
-            # Generate a list of frame indices to sample, starting from 0 to frame_count, stepping by frame_interval.
-            frame_indices = list(range(0, frame_count, frame_interval))
-            
+            # Calculate the number of sequences that can be formed.
+            num_sequences = effective_total_frames // self.num_frames
 
-            # Iterate over the sampled frame indices.
-            for frame_idx in frame_indices:
-                # Append a tuple of (video_path, frame_idx) to the frame_info list.
-                self.frame_info.append((video_path, frame_idx))
+            # Generate start indices for each sequence.
+            for seq_idx in range(num_sequences):
+                start_frame_idx = seq_idx * self.num_frames * self.frame_interval
+                self.video_sequence_indices.append((video_path, start_frame_idx))
 
-                # Append the global frame index to the indices list.
-                indices.append(idx)
-
-                # Increment the global index counter.
-                idx += 1
-
-            # Update statistics for frames after sampling.
-            sampled_frame_count = len(frame_indices)
-            self.total_frames_after_sampling += sampled_frame_count
-            self.frames_per_video_after[video_path] = sampled_frame_count
-
-            # Map the video path to its list of frame indices in the video_frame_indices dictionary.
-            self.video_frame_indices[video_path] = indices
-        
-        # If specified, shuffle the video paths keeping the frames in the same video together.
-        if shuffle:
-            #print("Video order before shuffling: ", list(self.video_frame_indices.keys())[:10])
-            # Shuffle the video paths
-            video_paths = list(self.video_frame_indices.keys())
-            random.shuffle(video_paths)
-            self.video_frame_indices = {path: self.video_frame_indices[path] for path in video_paths}
-            #print("Video order after shuffling: ", list(self.video_frame_indices.keys())[:10])
+        # Debugging print statements.
+        print(f"Total number of sequences: {len(self.video_sequence_indices)}")
 
     def __len__(self):
         """
-        Return the total number of frames in the dataset after sampling.
+        Return the total number of sequences in the dataset.
         """
-        return len(self.frame_info)
+        return len(self.video_sequence_indices)
 
     def __getitem__(self, idx):
         """
-        Retrieve the data for a single frame given its index.
+        Retrieve the data for a single sequence given its index.
 
         Parameters:
-        - idx (int): Index of the frame to retrieve.
+        - idx (int): Index of the sequence to retrieve.
 
         Returns:
-        - frame (Tensor): Transformed frame image tensor of shape (3, 224, 224).
-        - frame_patches (Tensor): Tensor of image patches of shape (196, 3, 16, 16).
-        - depth_map (Tensor): Depth map tensor of shape (1, 224, 224).
-        - depth_patches (Tensor): Tensor of depth map patches of shape (196, 1, 16, 16).
-        - torch.tensor(frame_idx) (Tensor): Tensor containing the original frame index.
+        - frames (Tensor): Tensor of frames of shape (CHANNELS, TIME, HEIGHT, WIDTH).
+        - frame_patches (Tensor): Tensor of image patches of shape (TIME, NUM_PATCHES, CHANNELS, PATCH_SIZE, PATCH_SIZE).
+        - depth_maps (Tensor): Tensor of depth maps of shape (TIME, 1, HEIGHT, WIDTH).
+        - depth_patches (Tensor): Tensor of depth map patches of shape (TIME, NUM_PATCHES, 1, PATCH_SIZE, PATCH_SIZE).
+        - torch.tensor(idx) (Tensor): Tensor containing the sequence index.
         """
-        # Retrieve the video path and frame index from the frame_info list.
-        video_path, frame_idx = self.frame_info[idx]
+        # Retrieve the video path and start frame index from the list.
+        video_path, start_frame_idx = self.video_sequence_indices[idx]
 
-        # Read the specified frame from the video.
-        frame = self._read_frame(video_path, frame_idx)
+        # Debugging prints.
+        print(f"Processing sequence idx: {idx}")
+        print(f"Video path: {video_path}")
+        print(f"Start frame index: {start_frame_idx}")
 
-        # Create a copy of the original frame for depth map computation.
-        original_frame = frame.copy()
+        # Generate the list of frame indices for the sequence.
+        frame_indices = [start_frame_idx + i * self.frame_interval for i in range(self.num_frames)]
 
-        if self.transform:
-            # Apply the specified transformations to the frame (e.g., resizing, converting to tensor).
-            frame = self.transform(frame)  # Resulting tensor shape: (3, 224, 224)
+        # Initialize lists to store frames, depth maps, and patches.
+        frames_list = []
+        depth_maps_list = []
+        frame_patches_list = []
+        depth_patches_list = []
 
-        # Compute the depth map for the original frame.
-        depth_map = self._get_depth_map(original_frame)
+        # Read and process each sampled frame.
+        for frame_idx in frame_indices:
+            # Read the frame.
+            frame = self._read_frame(video_path, frame_idx)
 
-        # Resize the depth map to match the frame size (224x224).
-        depth_map = cv2.resize(depth_map, (224, 224))
+            # Create a copy of the original frame for depth map computation.
+            original_frame = frame.copy()
 
-        # Convert the depth map to a tensor and add a channel dimension.
-        depth_map = torch.from_numpy(depth_map).unsqueeze(0)  # Shape: (1, 224, 224)
+            if self.transform:
+                # Apply the specified transformations to the frame (e.g., resizing, converting to tensor).
+                frame = self.transform(frame)  # Resulting tensor shape: (3, H, W)
 
-        # Extract patches from the transformed frame.
-        frame_patches = self._get_patches(frame)  # Shape: (196, 3, 16, 16)
+            # Compute the depth map for the original frame.
+            depth_map = self._get_depth_map(original_frame)
 
-        # Extract patches from the depth map.
-        depth_patches = self._get_patches(depth_map)  # Shape: (196, 1, 16, 16)
+            # Resize the depth map to match the frame size (e.g., 224x224).
+            depth_map = cv2.resize(depth_map, (frame.shape[2], frame.shape[1]))
 
-        # Return the processed data along with the frame index.
-        return frame, frame_patches, depth_map, depth_patches, torch.tensor(frame_idx)
+            # Convert the depth map to a tensor and add a channel dimension.
+            depth_map = torch.from_numpy(depth_map).unsqueeze(0)  # Shape: (1, H, W)
+
+            # Extract patches from the transformed frame.
+            frame_patches = self._get_patches(frame)  # Shape: (NUM_PATCHES, 3, PATCH_SIZE, PATCH_SIZE)
+
+            # Extract patches from the depth map.
+            depth_patches = self._get_patches(depth_map)  # Shape: (NUM_PATCHES, 1, PATCH_SIZE, PATCH_SIZE)
+
+            # Append to the lists.
+            frames_list.append(frame)
+            depth_maps_list.append(depth_map)
+            frame_patches_list.append(frame_patches)
+            depth_patches_list.append(depth_patches)
+
+        # Stack frames and patches along the TIME dimension.
+        frames = torch.stack(frames_list, dim=1)  # Shape: (3, TIME, H, W)
+        depth_maps = torch.stack(depth_maps_list, dim=0)  # Shape: (TIME, 1, H, W)
+        frame_patches = torch.stack(frame_patches_list, dim=0)  # Shape: (TIME, NUM_PATCHES, 3, PATCH_SIZE, PATCH_SIZE)
+        depth_patches = torch.stack(depth_patches_list, dim=0)  # Shape: (TIME, NUM_PATCHES, 1, PATCH_SIZE, PATCH_SIZE)
+
+        # Debugging prints.
+        print(f"Frames tensor shape: {frames.shape}")
+        print(f"Depth maps tensor shape: {depth_maps.shape}")
+        print(f"Frame patches tensor shape: {frame_patches.shape}")
+        print(f"Depth patches tensor shape: {depth_patches.shape}")
+
+        # Return the processed data along with the sequence index.
+        return frames, frame_patches, depth_maps, depth_patches, torch.tensor(idx)
 
     def _read_frame(self, video_path, frame_idx):
         """
@@ -275,7 +280,7 @@ class VideoFrameDataset(Dataset):
             depth = self.depth_model.infer_image(raw_img)
 
         # Normalize the depth map to the range [0, 1].
-        depth = (depth - depth.min()) / (depth.max() - depth.min())
+        depth = (depth - depth.min()) / (depth.max() - depth.min() + 1e-8)
 
         # Convert the depth map to a 32-bit floating-point numpy array.
         depth = depth.astype(np.float32)
@@ -291,79 +296,30 @@ class VideoFrameDataset(Dataset):
         - tensor (Tensor): Input tensor of shape (C, H, W).
 
         Returns:
-        - patches (Tensor): Tensor containing patches of shape (num_patches, C, 16, 16).
+        - patches (Tensor): Tensor containing patches of shape (NUM_PATCHES, C, 16, 16).
         """
         # Use the unfold method to extract patches along the height and width dimensions.
         patches = tensor.unfold(1, 16, 16).unfold(2, 16, 16)
-        # The shape of patches is now (C, num_patches_H, num_patches_W, patch_size_H, patch_size_W).
+        # The shape of patches is now (C, NUM_PATCHES_H, NUM_PATCHES_W, PATCH_SIZE_H, PATCH_SIZE_W).
 
         # Rearrange the dimensions to bring the patch indices to the first two dimensions.
         patches = patches.permute(1, 2, 0, 3, 4)
-        # The shape of patches is now (num_patches_H, num_patches_W, C, 16, 16).
+        # The shape of patches is now (NUM_PATCHES_H, NUM_PATCHES_W, C, 16, 16).
 
         # Flatten the patch grid into a single dimension.
         patches = patches.contiguous().view(-1, tensor.shape[0], 16, 16)
-        # The final shape of patches is (num_patches, C, 16, 16).
+        # The final shape of patches is (NUM_PATCHES, C, 16, 16).
 
         # Return the tensor containing the patches.
         return patches
 
-# Import necessary modules for custom sampling and randomization.
-from torch.utils.data.sampler import Sampler
-import random
-
-# Define a custom batch sampler to ensure that each batch contains frames from the same video.
-class VideoBatchSampler(Sampler):
-    def __init__(self, video_frame_indices, batch_size, shuffle=True):
-        """
-        Initialize the batch sampler with the specified parameters.
-
-        Parameters:
-        - video_frame_indices (dict): Mapping from video paths to lists of frame indices.
-        - batch_size (int): Number of frames per batch.
-        - shuffle (bool): Whether to shuffle the batches.
-        """
-        self.batch_size = batch_size                    # Store the batch size.
-        self.shuffle = shuffle                          # Store the shuffle flag.
-
-        # Build a list of batches
-        self.batches = []
-
-        for video_path, indices in video_frame_indices.items():
-            # Ensure indices are sorted to maintain frame order within a batch
-            indices = sorted(indices)
-            # Split indices into batches
-            for i in range(0, len(indices), batch_size):
-                batch = indices[i:i + batch_size]
-                self.batches.append(batch)
-
-        # Shuffle the list of batches if shuffle is True
-        if shuffle:
-            random.shuffle(self.batches)
-
-    def __iter__(self):
-        """
-        Create an iterator that yields batches of frame indices.
-
-        Yields:
-        - batch (list): A list of frame indices representing a batch.
-        """
-        for batch in self.batches:
-            yield batch
-
-    def __len__(self):
-        """
-        Return the total number of batches.
-        """
-        return len(self.batches)
-    
 if __name__ == '__main__':
     import random
     import matplotlib.pyplot as plt
 
     # Set the random seed for reproducibility.
-    random.seed(23)
-    torch.manual_seed(23)
+    random.seed(24)
+    torch.manual_seed(24)
 
     # Define the transformation pipeline to apply to each frame.
     transform = transforms.Compose([
@@ -372,9 +328,14 @@ if __name__ == '__main__':
         transforms.ToTensor(),           # Convert the image to a PyTorch tensor with shape (3, 224, 224).
     ])
 
-    # Specify the path to the folder containing video files.
+    # Define the number of frames to sample per sequence.
+    NUM_FRAMES = 32  # T = 32
 
-    video_folder = config['data']['finevideo_path']+ '/sports_videos'
+    # Define the frame interval (e.g., take every nth frame).
+    FRAME_INTERVAL = 4  # Take one frame every 4 frames.
+
+    # Specify the path to the folder containing video files.
+    video_folder = config['data']['finevideo_path'] + '/sports_videos'
 
     # Check if the specified video folder exists.
     if not os.path.exists(video_folder):
@@ -387,150 +348,95 @@ if __name__ == '__main__':
     dataset = VideoFrameDataset(
         video_folder=video_folder,       # Path to the video folder.
         transform=transform,             # Transformation to apply to each frame.
-        depth_model=depth_model          # Depth estimation model.
+        depth_model=depth_model,         # Depth estimation model.
+        num_frames=NUM_FRAMES,           # Number of frames per sequence.
+        frame_interval=FRAME_INTERVAL    # Frame interval for sampling.
     )
 
     # Print dataset statistics to provide insight into the dataset composition.
-    #print("Dataset Statistics:")
-    #print(f"Total number of videos: {dataset.total_videos}")
-    #print(f"Total number of frames before sampling: {dataset.total_frames_before_sampling}")
-    #print(f"Total number of frames after sampling: {dataset.total_frames_after_sampling}")
-    #print("Frames per video before and after sampling:")
+    print("Dataset Statistics:")
+    print(f"Total number of sequences: {len(dataset)}")
 
-    # Iterate over the videos to print per-video frame counts.
-    for i, video_path in enumerate(dataset.frames_per_video_before):
-        video_name = os.path.basename(video_path)  # Extract the video file name.
-        frames_before = dataset.frames_per_video_before[video_path]  # Frames before sampling.
-        frames_after = dataset.frames_per_video_after[video_path]    # Frames after sampling.
+    # Set the batch size, which is the number of sequences per batch.
+    batch_size = 4  # Adjust this value based on your memory constraints and requirements.
 
-        #if i % 100 == 0:
-            # For large datasets, print statistics every 100 videos to avoid clutter.
-            #print(f"- {video_name}: {frames_before} frames before, {frames_after} frames after sampling")
-
-    # Set the batch size, which is the number of frames per batch from the same video.
-    batch_size = 16  # Adjust this value based on your memory constraints and requirements.
-
-    # Create an instance of the custom VideoBatchSampler with shuffle enabled.
-    batch_sampler = VideoBatchSampler(
-        dataset.video_frame_indices,     # Mapping from video paths to frame indices.
-        batch_size=batch_size,           # Number of frames per batch.
-        shuffle=True                     # Enable shuffling of batches.
-    )
-
-    # Create a DataLoader using the dataset and the custom batch sampler.
+    # Create a DataLoader using the dataset.
     dataloader = DataLoader(
         dataset,                         # The dataset from which to load data.
-        batch_sampler=batch_sampler,     # The custom batch sampler for batching frames.
+        batch_size=batch_size,           # Number of sequences per batch.
+        shuffle=True,                    # Shuffle the data at every epoch.
         num_workers=0,                   # Number of subprocesses to use for data loading.
     )
 
     # Iterate over the DataLoader to process batches of data.
     for batch_idx, batch in enumerate(dataloader):
-        # Unpack the batch into individual components.
-        frames, frame_patches, depth_maps, depth_patches, frame_indices = batch
         
-        # get the actual batch size for each batch as last batch may have less frames
-        batch_size = frames.shape[0]
-        
-
         # Print information about the current batch.
         print(f"Batch {batch_idx}:")
-        print(f"Frames shape: {frames.shape}")             # Expected shape: (batch_size, 3, 224, 224)
-        print(f"Frame patches shape: {frame_patches.shape}")  # Expected shape: (batch_size, 196, 3, 16, 16)
-        print(f"Depth maps shape: {depth_maps.shape}")     # Expected shape: (batch_size, 1, 224, 224)
-        print(f"Depth patches shape: {depth_patches.shape}")  # Expected shape: (batch_size, 196, 1, 16, 16)
+        #Print shape of the batch
+        print(f"Batch {batch_idx} has shapes: \nframes: {batch[0].shape},\nframe_patches: {batch[1].shape},\ndepth_maps: {batch[2].shape}, \ndepth_patches: {batch[3].shape}, \ntorch.tensor(idx): {batch[4].shape}")
+        
+        # Unpack the batch into individual components.
+        frames, frame_patches, depth_maps, depth_patches, sequence_indices = batch
+        
+        print(f"Frames shape: {frames.shape}")             # Expected shape: (batch_size, 3, TIME, H, W)
+        print(f"Frame patches shape: {frame_patches.shape}")  # Expected shape: (batch_size, TIME, NUM_PATCHES, 3, 16, 16)
+        print(f"Depth maps shape: {depth_maps.shape}")     # Expected shape: (batch_size, TIME, 1, H, W)
+        print(f"Depth patches shape: {depth_patches.shape}")  # Expected shape: (batch_size, TIME, NUM_PATCHES, 1, 16, 16)
+        print(f"Sequence indices: {sequence_indices}")
 
-        # Calculate the grid size (number of rows and columns)
-        grid_size = int(np.ceil(np.sqrt(batch_size)))  # Round up to ensure all images fit
+        # Visualize the frames of the first sequence in the batch.
+        first_sequence_frames = frames[0]  # Shape: (3, TIME, H, W)
+        first_sequence_index = sequence_indices[0].item()
 
-        # --- Visualize the Frames ---
-        # Prepare frames for visualization by permuting dimensions and converting to NumPy arrays.
-        frames_np = frames.permute(0, 2, 3, 1).numpy()  # Shape: (batch_size, 224, 224, 3)
+        # Permute dimensions for visualization.
+        frames_np = first_sequence_frames.permute(1, 2, 3, 0).numpy()  # Shape: (TIME, H, W, 3)
 
-        # Create a figure with a grid of subplots to display each frame in the batch.
-        fig, axs = plt.subplots(grid_size, grid_size, figsize=(grid_size * 2, grid_size * 2))
-
-        # Flatten the axs array for easy indexing.
+        # Create a figure to display the frames.
+        fig, axs = plt.subplots(4, 8, figsize=(16, 8))  # Adjust grid size based on NUM_FRAMES
         axs = axs.flatten()
-
-        # Iterate over each frame in the batch to display it.
-        for idx in range(batch_size):
-            ax = axs[idx]                          # Get the appropriate subplot axis.
-            ax.imshow(frames_np[idx])              # Display the frame image.
-            ax.axis('off')                         # Hide axis ticks and labels.
-            ax.set_title(f"Frame {frame_indices[idx].item()}")  # Set the subplot title.
-
-        # Turn off any unused subplots.
-        for idx in range(batch_size, grid_size * grid_size):
-            axs[idx].axis('off')  # Hide axes without images.
-
-        # Set the overall title for the figure.
-        plt.suptitle(f"Frames from the same video in Batch {batch_idx}")
-
-        # Adjust layout to prevent overlap.
+        for idx in range(NUM_FRAMES):
+            ax = axs[idx]
+            ax.imshow(frames_np[idx])
+            ax.axis('off')
+            ax.set_title(f"Frame {idx}")
+        plt.suptitle(f"Frames of Sequence {first_sequence_index} in Batch {batch_idx}")
         plt.tight_layout()
+        plt.savefig(f"video_frames_batch_{batch_idx}.png")
+        plt.close(fig)
 
-        # Display the figure containing the frames.
-        plt.savefig(f"frames_batch_{batch_idx}.png")
+        # Visualize the depth maps of the first sequence in the batch.
+        first_sequence_depth_maps = depth_maps[0]  # Shape: (TIME, 1, H, W)
+        depth_maps_np = first_sequence_depth_maps.squeeze(1).numpy()  # Shape: (TIME, H, W)
 
-        # --- Visualize the Depth Maps ---
-        # Prepare depth maps for visualization by removing the channel dimension.
-        depth_maps_np = depth_maps.squeeze(1).numpy()  # Shape: (batch_size, 224, 224)
-
-        # Create a figure with a grid of subplots to display each depth map in the batch.
-        fig, axs = plt.subplots(grid_size, grid_size, figsize=(grid_size * 2, grid_size * 2))
-
-        # Flatten the axs array for easy indexing.
+        fig, axs = plt.subplots(4, 8, figsize=(16, 8))
         axs = axs.flatten()
-
-        # Iterate over each depth map in the batch to display it.
-        for idx in range(batch_size):
-            ax = axs[idx]                           # Get the appropriate subplot axis.
-            ax.imshow(depth_maps_np[idx], cmap='magma')  # Display the depth map using the 'magma' colormap.
-            ax.axis('off')                          # Hide axis ticks and labels.
-            ax.set_title(f"Depth Map {frame_indices[idx].item()}")  # Set the subplot title.
-
-        # Turn off any unused subplots.
-        for idx in range(batch_size, grid_size * grid_size):
-            axs[idx].axis('off')  # Hide axes without images.
-
-        # Set the overall title for the figure.
-        plt.suptitle(f"Depth Maps from the same video in Batch {batch_idx}")
-
-        # Adjust layout to prevent overlap.
+        for idx in range(NUM_FRAMES):
+            ax = axs[idx]
+            ax.imshow(depth_maps_np[idx], cmap='magma')
+            ax.axis('off')
+            ax.set_title(f"Depth {idx}")
+        plt.suptitle(f"Depth Maps of Sequence {first_sequence_index} in Batch {batch_idx}")
         plt.tight_layout()
+        plt.savefig(f"video_depth_maps_batch_{batch_idx}.png")
+        plt.close(fig)
 
-        # Display the figure containing the depth maps.
-        plt.savefig(f"depth_maps_batch_{batch_idx}.png")
+        # Visualize the patches of the first frame of the first sequence.
+        first_frame_patches = frame_patches[0, 0]  # Shape: (NUM_PATCHES, 3, 16, 16)
 
-        # Visualize the patches of the first frame in the batch.
-        fig, axs = plt.subplots(14, 14, figsize=(20, 20))  # Create a 14x14 grid of subplots.
-
-        # Iterate over the patch grid to display each patch.
+        fig, axs = plt.subplots(14, 14, figsize=(20, 20))  # Assuming 196 patches (14x14).
         for i in range(14):
             for j in range(14):
                 ax = axs[i, j]
-                # Calculate the patch index.
                 patch_idx = i * 14 + j
-
-                # Retrieve the patch and permute dimensions for visualization.
-                patch = frame_patches[0, patch_idx].permute(1, 2, 0).numpy()
-
-                # Display the patch image.
+                patch = first_frame_patches[patch_idx].permute(1, 2, 0).numpy()
                 ax.imshow(patch)
-
-                # Hide axis ticks and labels.
                 ax.axis('off')
-
-        # Set the overall title for the figure.
-        plt.suptitle(f"Frame Patches from the same video in Batch {batch_idx}")
-
-        # Adjust layout to prevent overlap.
+        plt.suptitle(f"Patches of First Frame of Sequence {first_sequence_index} in Batch {batch_idx}")
         plt.tight_layout()
+        plt.savefig(f"video_frame_patches_batch_{batch_idx}.png")
+        plt.close(fig)
 
-        # Save the figure containing the frame patches.
-        plt.savefig(f"frame_patches_batch_{batch_idx}.png")
-
-        # For testing purposes, limit the processing to 10 batches.
-        if batch_idx == 10:
+        # For testing purposes, limit the processing to 1 batch.
+        if batch_idx == 4:
             break
