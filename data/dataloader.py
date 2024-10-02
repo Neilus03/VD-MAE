@@ -373,14 +373,15 @@ if __name__ == '__main__':
     ])
 
     # Specify the path to the folder containing video files.
-   
-    video_folder = '../sports_videos'
 
+    video_folder = config['data']['finevideo_path']+ '/sports_videos'
 
     # Check if the specified video folder exists.
     if not os.path.exists(video_folder):
-        # If the folder does not exist, raise a FileNotFoundError.
-        raise FileNotFoundError(f"The specified video folder does not exist: {video_folder}")
+        video_folder = '/home/ndelafuente/VD-MAE/sports_videos'
+        if not os.path.exists(video_folder):
+            # If the folder does not exist, raise a FileNotFoundError.
+            raise FileNotFoundError(f"The specified video folder does not exist: {video_folder}")
 
     # Create an instance of the VideoFrameDataset with the given parameters.
     dataset = VideoFrameDataset(
