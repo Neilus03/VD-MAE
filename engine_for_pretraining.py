@@ -95,14 +95,10 @@ def train_one_epoch(model: torch.nn.Module,
                     p2=patch_size)
 
             B, N, C = images_patch.shape
-            labels = images_patch[~decode_masked_pos].reshape(B, -1, C)
-            rgb_labels = labels[:, :, :1536]  # TODO HARDCODED
-            depth_labels = labels[:, :, 1536:]  # TODO HARDCODED
+            rgb_labels, depth_labels = images_patch[~decode_masked_pos].reshape(B, -1, C)
 
         if loss_scaler is None:
-            outputs = model(images, bool_masked_pos, decode_masked_pos)
-            rgb_outputs = outputs[:, :, :1536]  # TODO HARDCODED - is RGB size 512*3?
-            depth_outupts = outputs[:, :, 1536:]  # TODO HARDCODED - is depth size 512*1?
+            rgb_outputs, depth_outputs = model(images, bool_masked_pos, decode_masked_pos)
             
             cal_loss_mask = bool_masked_pos[~decode_masked_pos].reshape(B, -1)
 

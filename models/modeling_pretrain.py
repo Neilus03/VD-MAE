@@ -249,12 +249,14 @@ class PretrainVisionTransformerDecoder(nn.Module):
         # Applies normalization and the projection head to the masked tokens to predict pixel values.
         if return_token_num > 0: # checks if reconstruction is to be done on a subset of tokens
             # x = self.head(self.norm(x[:, -return_token_num:]))  # only return the mask tokens predict pixels [B, N_mask, num_classes] where N_mask = return_token_num
-            x = self.rgbd_head(self.norm(x[:, -return_token_num:]))  # only return the mask tokens predict pixels
+            rgb_x = self.rgb_head(self.norm(x[:, -return_token_num:]))
+            depth_x = self.depth_head(self.norm(x[:, -return_token_num:]))
         else:  # otherwise computes output for all tokens
             # x = self.head(self.norm(x)) # [B, N, num_classes]
-            x = self.rgbd_head(self.norm(x)) # [B, N, num_classes]
+            rgb_x = self.rgb_head(self.norm(x))
+            depth_x = self.depth_head(self.norm(x))
 
-        return x  # returns the predicted pixel values for rgb and depth
+        return rgb_x, depth_x  # returns the predicted pixel values for rgb and depth
 
 
 class PretrainVisionTransformer(nn.Module):
@@ -381,9 +383,9 @@ class PretrainVisionTransformer(nn.Module):
         x_full = torch.cat([x_vis + pos_emd_vis, self.mask_token + pos_emd_mask],
                            dim=1)  # Concatenates visible and masked tokens. [B, N, C_d]
 
-        x = self.decoder(x_full, pos_emd_mask.shape[1]) # The single output x has RGB and Depth info
+        rgb_x, depth_x = self.decoder(x_full, pos_emd_mask.shape[1]) # The single output x has RGB and Depth info
 
-        return x
+        return rgb_x, depth_x
 
 # register model small
 @register_model # timm register model
