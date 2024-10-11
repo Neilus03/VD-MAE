@@ -132,12 +132,20 @@ class PretrainVisionTransformerEncoder(nn.Module):
         self.head = nn.Linear(self.embed_dim, num_classes) if num_classes > 0 else nn.Identity() # defines new linear classifier if num_classes>0 else Identity()
 
     # This method defines the forward pass for the feature extraction part of the encoder. It takes masked video input, performs patch embedding, adds positional embedding and then feeds the visible patches through the transformer blocks.
-    def forward_features(self, x, mask):
+    def forward_features(self, x, rgb_mask, depth_mask):
         # input x: [B, C, T, H, W] - mask: [B, T*H*W]
         _, _, T, _, _ = x.shape # extracts the temporal dimension (T) from the input video 'x'
-        x = self.patch_embed(x)  # Applies patch embedding. [B, C, T, H, W] -> [B, N, D] - N: number of patches per video (= T*H*W/P*P*Tp), D: embedding dimension
+        rgb_x = self.patch_embed(x[:, :3, :, :, :])  # Applies patch embedding. [B, C, T, H, W] -> [B, N, D] - N: number of patches per video (= T*H*W/P*P*Tp), D: embedding dimension
+        depth_x = self.patch_embed(x[:, 3:, :, :, :])  # Applies patch embedding. [B, C, T, H, W] -> [B, N, D] - N: number of patches per video (= T*H*W/P*P*Tp), D: embedding dimension
 
-        x = x + self.pos_embed.type_as(x).to(x.device).clone().detach()  # Adds positional embeddings. [B, N, D]
+        rgb_x = rgb_x + self.pos_embed.type_as(rgb_x).to(rgb_x.device).clone().detach()  # Adds positional embeddings. [B, N, D]
+        depth_x = depth_x + self.pos_embed.type_as(depth_x).to(depth_x.device).clone().detach()  # Adds positional embeddings. [B, N, D]
+
+        # TODO Is this conctaenation correct?
+        x = torch.cat([rgb_x, depth_x], dim=1)  # Concatenates rgb and depth embeddings. [B, 2*N, D]
+
+        # TODO I am also concatenating the masks, this will work depending on how the rgb_x and depth_x are concatenated
+        mask = torch.cat([rgb_mask, depth_mask], dim=1)  # Concatenates rgb and depth masks. [B, 2*T*H*W]
 
         B, _, C = x.shape # extracts the batch size (B) and embedding dimension (C)
         x_vis = x[~mask].reshape(B, -1, C)  # Selects visible patches and reshapes. [B, N_vis, D]  N_vis: number of visible patches per video,
@@ -153,9 +161,9 @@ class PretrainVisionTransformerEncoder(nn.Module):
         return x_vis  # Returns the processed features.
 
     # The forward method performs a forward pass of the encoder
-    def forward(self, x, mask):
+    def forward(self, rgb_x, depth_x, rgb_mask, depth_mask):
         # input x: [B, C, T, H, W] - mask: [B, T*H*W]
-        x = self.forward_features(x, mask)  # Extracts features from the input. [B, N_vis, D]
+        x = self.forward_features(rgb_x, depth_x, rgb_mask, depth_mask)  # Extracts features from the input. [B, N_vis, D]
         x = self.head(x)  # Applies the classification head. output [B, N_vis, num_classes] if num_classes>0 else [B, N_vis, D] (not useful in pre-training since num_classes==0)
         return x
 
@@ -172,7 +180,8 @@ class PretrainVisionTransformerDecoder(nn.Module):
         # calls the init method of the parent class (nn.Module)
         super().__init__()
         self.num_classes = num_classes  # Number of classes (output channels of the decoder).
-        assert num_classes == 3 * tubelet_size * patch_size ** 2  # asserts output dimension, num_classes should be number of pixels (3 channles) * number of frames in tubelet
+        # TODO changed the assertion from 3 classes to 4 classes
+        assert num_classes == 4 * tubelet_size * patch_size ** 2  # asserts output dimension, num_classes should be number of pixels (3 channles) * number of frames in tubelet
         self.num_features = self.embed_dim = embed_dim  # Embedding dimension.
         self.patch_size = patch_size # Patch size
         self.use_checkpoint = use_checkpoint  # Whether to use gradient checkpointing.
@@ -188,7 +197,9 @@ class PretrainVisionTransformerDecoder(nn.Module):
                 init_values=init_values)  # Creates each transformer decoder block. depth: number of decoder blocks
             for i in range(depth)])  # iterates to create multiple decoder blocks
         self.norm = norm_layer(embed_dim)  # Normalization layer.
-        self.head = nn.Linear(embed_dim, num_classes) if num_classes > 0 else nn.Identity()  # creates a linear projection head
+        # TODO not sure about this...?
+        # Linear Projection Heads (Modified)
+        self.rgbd_head = nn.Linear(embed_dim, num_classes) if num_classes > 0 else nn.Identity()  # creates a linear projection head for combined RGBD
 
         # initializes weights and biases
         self.apply(self._init_weights)  # applies the weight initialization function to all submodules
@@ -226,6 +237,7 @@ class PretrainVisionTransformerDecoder(nn.Module):
 
     # The forward method performs a forward pass of the decoder. It takes the full set of tokens (visible + mask tokens), passes them through the transformer blocks, normalizes, and projects to pixel values using a linear head.
     def forward(self, x, return_token_num):
+        # TODO rgb & depth outputs should be handled here. I separated the output into two heads, not sure if this is correct
         # x: [B, N, C_d] - return_token_num: int
         if self.use_checkpoint: # checks if gradient checkpointing is enabled
             for blk in self.blocks: # loops over each decoder block
@@ -236,11 +248,13 @@ class PretrainVisionTransformerDecoder(nn.Module):
 
         # Applies normalization and the projection head to the masked tokens to predict pixel values.
         if return_token_num > 0: # checks if reconstruction is to be done on a subset of tokens
-            x = self.head(self.norm(x[:, -return_token_num:]))  # only return the mask tokens predict pixels [B, N_mask, num_classes] where N_mask = return_token_num
+            # x = self.head(self.norm(x[:, -return_token_num:]))  # only return the mask tokens predict pixels [B, N_mask, num_classes] where N_mask = return_token_num
+            x = self.rgbd_head(self.norm(x[:, -return_token_num:]))  # only return the mask tokens predict pixels
         else:  # otherwise computes output for all tokens
-            x = self.head(self.norm(x)) # [B, N, num_classes]
+            # x = self.head(self.norm(x)) # [B, N, num_classes]
+            x = self.rgbd_head(self.norm(x)) # [B, N, num_classes]
 
-        return x
+        return x  # returns the predicted pixel values for rgb and depth
 
 
 class PretrainVisionTransformer(nn.Module):
@@ -319,7 +333,9 @@ class PretrainVisionTransformer(nn.Module):
                                             bias=False)  # projects encoder output to decoder input dimension
 
         # Mask token for masked patches
-        self.mask_token = nn.Parameter(torch.zeros(1, 1, decoder_embed_dim)) # mask token learnable parameter [1, 1, decoder_embed_dim]
+        # TODO not sure about this
+        self.rgb_mask_token = nn.Parameter(torch.zeros(1, 1, decoder_embed_dim)) # mask token learnable parameter [1, 1, decoder_embed_dim]
+        self.depth_mask_token = nn.Parameter(torch.zeros(1, 1, decoder_embed_dim)) # mask token learnable parameter [1, 1, decoder_embed_dim]
 
         # Positional embeddings for decoder
         self.pos_embed = get_sinusoid_encoding_table(self.encoder.patch_embed.num_patches,
@@ -365,7 +381,7 @@ class PretrainVisionTransformer(nn.Module):
         x_full = torch.cat([x_vis + pos_emd_vis, self.mask_token + pos_emd_mask],
                            dim=1)  # Concatenates visible and masked tokens. [B, N, C_d]
 
-        x = self.decoder(x_full, pos_emd_mask.shape[1])  # Decodes the full tokens. [B, N_mask, 3 * 16 * 16]
+        x = self.decoder(x_full, pos_emd_mask.shape[1]) # The single output x has RGB and Depth info
 
         return x
 

@@ -22,7 +22,7 @@ import random
 import sys
 sys.path.append(os.path.join(os.path.dirname(__file__), '../depth_anything_v2'))
 
-# Import the Depth Anything V2 model from the specified module.
+# Import the Depth Anything  V2 model from the specified module.
 from depth_anything_v2.dpt import DepthAnythingV2
 
 # Load configuration settings from a YAML file (assuming you have a 'config.yaml' file).

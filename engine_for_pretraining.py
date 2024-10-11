@@ -99,6 +99,8 @@ def train_one_epoch(model: torch.nn.Module,
 
         if loss_scaler is None:
             outputs = model(images, bool_masked_pos, decode_masked_pos)
+            # TODO we should have both RGB and depth outputs here so that we can calculate the loss on both
+            # Output shape is (B, N_mask, decoder_num_classes)
             loss = (outputs - labels)**2
             loss = loss.mean(dim=-1)
             cal_loss_mask = bool_masked_pos[~decode_masked_pos].reshape(B, -1)
