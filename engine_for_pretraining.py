@@ -99,12 +99,25 @@ def train_one_epoch(model: torch.nn.Module,
 
         if loss_scaler is None:
             outputs = model(images, bool_masked_pos, decode_masked_pos)
-            # TODO we should have both RGB and depth outputs here so that we can calculate the loss on both
-            # Output shape is (B, N_mask, decoder_num_classes)
-            loss = (outputs - labels)**2
-            loss = loss.mean(dim=-1)
+            rgb_outputs = [:, :, :1536]  # TODO HARDCODED - is RGB size 512*3?
+            depth_outupts = [:, :, 1536:]  # TODO HARDCODED - is depth size 512*1?
+            rgb_labels = labels[:, :, :1536]  # TODO HARDCODED
+            depth_labels = labels[:, :, 1536:]  # TODO HARDCODED
+            
+            # RGB loss
+            rgb_loss = (rgb_outputs - rgb_labels)**2
+            rgb_loss = rgb_loss.mean(dim=-1)
             cal_loss_mask = bool_masked_pos[~decode_masked_pos].reshape(B, -1)
-            loss = (loss * cal_loss_mask).sum() / cal_loss_mask.sum()
+            rgb_loss = (rgb_loss * cal_loss_mask).sum() / cal_loss_mask.sum()
+
+            # Depth loss
+            depth_loss = (depth_outupts - depth_labels)**2
+            depth_loss = depth_loss.mean(dim=-1)
+            cal_loss_mask = bool_masked_pos[~decode_masked_pos].reshape(B, -1)
+            depth_loss = (depth_loss * cal_loss_mask).sum() / cal_loss_mask.sum()
+
+            # Combined loss
+            loss = rgb_loss + depth_loss  # TODO add weights
         else:
             with torch.cuda.amp.autocast():
                 outputs = model(images, bool_masked_pos, decode_masked_pos)
