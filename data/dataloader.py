@@ -313,6 +313,8 @@ class VideoFrameDataset(Dataset):
         # Return the tensor containing the patches.
         return patches
 
+
+
 if __name__ == '__main__':
     import random
     import matplotlib.pyplot as plt
