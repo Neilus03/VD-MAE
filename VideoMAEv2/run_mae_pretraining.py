@@ -12,6 +12,7 @@ import json
 import os
 import random
 import time
+import warnings
 from functools import partial
 from pathlib import Path
 
@@ -20,15 +21,17 @@ import torch
 import torch.backends.cudnn as cudnn
 from packaging import version
 from timm.models import create_model
+from torchvision import transforms
 
 # NOTE: Do not comment `import models`, it is used to register models
 import models  # noqa: F401
 import utils
-from dataset import build_pretraining_dataset
+#from dataset import build_pretraining_dataset
 from engine_for_pretraining import train_one_epoch
 from optim_factory import create_optimizer
 from utils import NativeScalerWithGradNormCount as NativeScaler
 from utils import multiple_pretrain_samples_collate
+from data.dataloader import VideoFrameDataset
 
 
 def get_args():
@@ -294,7 +297,91 @@ def main(args):
     args.patch_size = patch_size
 
     # get dataset
-    dataset_train = build_pretraining_dataset(args)
+    #dataset_train = build_pretraining_dataset(args)
+
+    """
+    Dataset loading
+    """
+    import sys
+    sys.path.append(os.path.join(os.path.dirname(__file__), '../depth_anything_v2'))
+
+    # Import the Depth Anything  V2 model from the specified module.
+    from depth_anything_v2.dpt import DepthAnythingV2
+
+    # Load configuration settings from a YAML file (assuming you have a 'config.yaml' file).
+    import yaml
+    with open('../config/config.yaml', 'r') as f:
+        config = yaml.safe_load(f)
+
+    # Configure the device to be used for computation.
+    # Use GPU ('cuda') if available; otherwise, fall back to CPU ('cpu').
+    DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
+
+    # Define model configurations for the Depth Anything V2 model.
+    # The 'vitl' configuration specifies the model architecture and parameters.
+    model_configs = {
+        'vitl': {
+            'encoder': 'vitl',               # Use the 'vitl' encoder architecture.
+            'features': 256,                 # Number of feature maps.
+            'out_channels': [256, 512, 1024, 1024]  # Output channels at different layers.
+        }
+    }
+
+    # Initialize the Depth Anything V2 model with the specified configuration.
+    depth_model = DepthAnythingV2(**model_configs['vitl'])
+
+    # Suppress future warnings during model loading.
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", category=FutureWarning)
+        # Load the pre-trained model weights from the checkpoint specified in the configuration.
+        depth_model.load_state_dict(torch.load(config['data']['depth_model_checkpoint'], map_location=DEVICE))
+
+    # Move the model to the configured device (GPU or CPU) and set it to evaluation mode.
+    depth_model = depth_model.to(DEVICE).eval()
+
+    # Set the random seed for reproducibility.
+    random.seed(24)
+    torch.manual_seed(24)
+
+    # Define the transformation pipeline to apply to each frame.
+    transform = transforms.Compose([
+        transforms.ToPILImage(),         # Convert the frame to a PIL Image.
+        transforms.Resize((224, 224)),   # Resize the image to 224x224 pixels.
+        transforms.ToTensor(),           # Convert the image to a PyTorch tensor with shape (3, 224, 224).
+    ])
+
+    # Define the number of frames to sample per sequence.
+    NUM_FRAMES = 32  # T = 32
+
+    # Define the frame interval (e.g., take every nth frame).
+    FRAME_INTERVAL = 4  # Take one frame every 4 frames.
+
+    # Specify the path to the folder containing video files.
+    video_folder = config['data']['finevideo_path'] + '/sports_videos'
+
+    # Check if the specified video folder exists.
+    if not os.path.exists(video_folder):
+        video_folder = '/home/ndelafuente/VD-MAE/sports_videos'
+        if not os.path.exists(video_folder):
+            # If the folder does not exist, raise a FileNotFoundError.
+            raise FileNotFoundError(f"The specified video folder does not exist: {video_folder}")
+
+    dataset = VideoFrameDataset(
+        video_folder=video_folder,       # Path to the video folder.
+        transform=transform,             # Transformation to apply to each frame.
+        depth_model=depth_model,         # Depth estimation model.
+        num_frames=NUM_FRAMES,           # Number of frames per sequence.
+        frame_interval=FRAME_INTERVAL    # Frame interval for sampling.
+    )
+
+    # Split the dataset into training and validation sets.
+    train_size = int(0.8 * len(dataset))
+    val_size = len(dataset) - train_size
+    dataset_train, dataset_val = torch.utils.data.random_split(dataset, [train_size, val_size])
+
+    """
+    End of dataset loading
+    """
 
     num_tasks = utils.get_world_size()
     global_rank = utils.get_rank()
