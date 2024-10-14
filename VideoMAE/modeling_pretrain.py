@@ -26,7 +26,7 @@ __all__ = [
 class PretrainVisionTransformerEncoder(nn.Module):
     """ Vision Transformer with support for patch or hybrid CNN input stage
     """
-    def __init__(self, img_size=224, patch_size=16, in_chans=3, num_classes=0, embed_dim=768, depth=12,
+    def __init__(self, img_size=224, patch_size=16, in_chans=4, num_classes=0, embed_dim=768, depth=12,
                  num_heads=12, mlp_ratio=4., qkv_bias=False, qk_scale=None, drop_rate=0., attn_drop_rate=0.,
                  drop_path_rate=0., norm_layer=nn.LayerNorm, init_values=None, tubelet_size=2, use_checkpoint=False,
                  use_learnable_pos_emb=False):
@@ -189,7 +189,7 @@ class PretrainVisionTransformer(nn.Module):
     def __init__(self,
                  img_size=224, 
                  patch_size=16, 
-                 encoder_in_chans=3, 
+                 encoder_in_chans=4, 
                  encoder_num_classes=0, 
                  encoder_embed_dim=768, 
                  encoder_depth=12,

@@ -50,13 +50,20 @@ def train_one_epoch(model: torch.nn.Module, data_loader: Iterable, optimizer: to
                 videos_patch = rearrange(unnorm_videos, 'b c (t p0) (h p1) (w p2) -> b (t h w) (p0 p1 p2 c)', p0=2, p1=patch_size, p2=patch_size)
 
             B, _, C = videos_patch.shape
+
+            # TODO assuming labels have the 4 channels (RGBD)
             labels = videos_patch[bool_masked_pos].reshape(B, -1, C)
 
         with torch.cuda.amp.autocast():
             outputs = model(videos, bool_masked_pos)
-            loss = loss_func(input=outputs, target=labels)
 
-        loss_value = loss.item()
+            rgb_outputs = outputs[:, :3, :, :, :]
+            depth_outputs = outputs[:, 3:, :, :, :]
+
+            rgb_loss = loss_func(input=rgb_outputs, target=labels[:, :3, :, :, :])
+            depth_loss = loss_func(input=depth_outputs, target=labels[:, 3:, :, :, :])
+
+        loss_value = rgb_loss.item() + depth_loss.item()  # TODO add weighted sum
 
         if not math.isfinite(loss_value):
             print("Loss is {}, stopping training".format(loss_value))
@@ -65,6 +72,8 @@ def train_one_epoch(model: torch.nn.Module, data_loader: Iterable, optimizer: to
         optimizer.zero_grad()
         # this attribute is added by timm on one optimizer (adahessian)
         is_second_order = hasattr(optimizer, 'is_second_order') and optimizer.is_second_order
+
+        # TODO fix this so that it works with both losses (check NativeScaler in utils)
         grad_norm = loss_scaler(loss, optimizer, clip_grad=max_norm,
                                 parameters=model.parameters(), create_graph=is_second_order)
         loss_scale_value = loss_scaler.state_dict()["scale"]
