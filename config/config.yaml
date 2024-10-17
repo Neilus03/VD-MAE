@@ -1,24 +1,38 @@
 model:
-  image_size: [224, 224]
-  patch_size: 16
-  d_model: 384 #768
-  num_layers_encoder: 4 #12
-  num_layers_decoder: 2 #4
-  num_heads_encoder: 4 #8 #12
-  num_heads_decoder: 2 #6 #8
-  mask_ratio: 0.75
-  n_channels: 4
+  img_size: 224            # Image size
+  patch_size: 16           # Patch size
+  num_frames: 32           # Number of frames
+  tubelet_size: 2          # Tubelet size
+  embed_dim: 768           # Embedding dimension for both encoder and embeddings
+  frame_interval: 1        # Frame interval for the tubelets
+
+  num_layers_encoder: 12   # Number of layers in the encoder
+  encoder_num_heads: 12    # Number of attention heads in the encoder
+  encoder_mlp_ratio: 4     # MLP ratio in the encoder
+
+  decoder_embed_dim: 768   # Embedding dimension for the decoders
+  num_layers_decoder: 4    # Number of layers in both decoders
+  decoder_num_heads: 8     # Number of attention heads in the decoders
+  decoder_mlp_ratio: 4     # MLP ratio in the decoders
+
+  
+  alpha: 1.0               # Weight for RGB loss
+  beta: 1.0                # Weight for Depth loss
 
 training:
   batch_size: 8
   num_epochs: 1000
-  learning_rate: 0.00003
+  lr: 0.00003
   weight_decay: 0.0001
-  alpha: 1.0
-  beta: 1.0
-  mask_ratio: 0.75
-
+  model_checkpoint_path: /home/ndelafuente/VD-MAE/checkpoints/
+  num_workers: 0
+  mask_ratio: 0.75         # Mask ratio for training
 data:
   depth_model_checkpoint: /home/ndelafuente/VD-MAE/depth_anything_v2/checkpoints/depth_anything_v2_vitl.pth
   finevideo_path: /data/datasets/finevideo
 
+wandb: 
+  entity: Neilus03
+  project: VD-MAE
+  name: pretraining 
+  log_interval: 10
