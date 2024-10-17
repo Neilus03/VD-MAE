@@ -2,7 +2,7 @@ model:
   img_size: 224            # Image size
   patch_size: 16           # Patch size
   num_frames: 32           # Number of frames
-  tubelet_size: 2          # Tubelet size
+  tubelet_size: 8          # Tubelet size
   embed_dim: 768           # Embedding dimension for both encoder and embeddings
   frame_interval: 1        # Frame interval for the tubelets
 
@@ -16,8 +16,7 @@ model:
   decoder_mlp_ratio: 4     # MLP ratio in the decoders
 
   
-  alpha: 1.0               # Weight for RGB loss
-  beta: 1.0                # Weight for Depth loss
+
 
 training:
   batch_size: 8
@@ -27,6 +26,8 @@ training:
   model_checkpoint_path: /home/ndelafuente/VD-MAE/checkpoints/
   num_workers: 0
   mask_ratio: 0.75         # Mask ratio for training
+  alpha: 1.0               # Weight for RGB loss
+  beta: 1.0                # Weight for Depth loss 
 data:
   depth_model_checkpoint: /home/ndelafuente/VD-MAE/depth_anything_v2/checkpoints/depth_anything_v2_vitl.pth
   finevideo_path: /data/datasets/finevideo
