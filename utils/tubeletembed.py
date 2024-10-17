@@ -17,7 +17,7 @@ class TubeletEmbed(nn.Module):
         self.embed_dim = embed_dim
 
         # Calculate the number of patches
-        self.num_patches = (img_size[0] // patch_size[0]) * (img_size[1] // patch_size[1]) * (num_frames // tubelet_size)
+        self.num_tubelets = (img_size[0] // patch_size[0]) * (img_size[1] // patch_size[1]) * (num_frames // tubelet_size)
 
         # Define the 3D convolutional layer
         self.proj = nn.Conv3d(
