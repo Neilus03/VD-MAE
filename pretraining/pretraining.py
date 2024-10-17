@@ -42,40 +42,10 @@ def main():
 
     # Initialize the model
     model = CrossModalVideoMAE(model_config)
+    
     #Send the model to the device
     model = model.to(device)
 
-
-    '''Set Up Dataset and Dataloader'''
-
-    # Define the transformations
-    transform = transforms.Compose([
-        transforms.ToPILImage(),
-        transforms.Resize((model_config['img_size'], model_config['img_size'])),
-        transforms.ToTensor()
-    ])
-
-    # Initialize the dataset
-    video_folder = data_config['finevideo_path'] if os.path.exists(data_config['finevideo_path']) else '/home/ndelafuente/VD-MAE/sports_videos'
-
-    dataset = VideoFrameDataset(
-        video_folder = video_folder,
-        transform = transform,
-        depth_model=None,
-        num_frames = model_config['num_frames'],
-        frame_interval = model_config['frame_interval']
-    )
-
-    # Initialize the dataloader
-    dataloader = DataLoader(
-        dataset,
-        batch_size=training_config['batch_size'],
-        shuffle=True,
-        num_workers=training_config['num_workers'],
-        pin_memory=True
-    )
-    
-    
     '''Setup DepthAnythingV2 Model'''
     sys.path.append(os.path.join(os.path.dirname(__file__), '../depth_anything_v2'))
     from depth_anything_v2.dpt import DepthAnythingV2
@@ -96,14 +66,37 @@ def main():
         depth_model.load_state_dict(torch.load(data_config['depth_model_checkpoint'], map_location=device))
     depth_model.eval()
     
-    dataset = VideoFrameDataset(
-        video_folder = video_folder,
-        transform = transform,
-        depth_model=depth_model,
-        num_frames = model_config['num_frames'],
-        frame_interval = model_config['frame_interval']
-    )
 
+    '''Set Up Dataset and Dataloader'''
+
+    # Define the transformations
+    transform = transforms.Compose([
+        transforms.ToPILImage(),
+        transforms.Resize((model_config['img_size'], model_config['img_size'])),
+        transforms.ToTensor()
+    ])
+
+    # Initialize the dataset
+    video_folder = data_config['finevideo_path'] if os.path.exists(data_config['finevideo_path']) else '/home/ndelafuente/VD-MAE/sports_videos'
+
+    dataset = VideoFrameDataset(
+            video_folder = video_folder,
+            transform = transform,
+            depth_model=depth_model,
+            num_frames = model_config['num_frames'],
+            frame_interval = model_config['frame_interval']
+        )
+
+
+    # Initialize the dataloader
+    dataloader = DataLoader(
+        dataset,
+        batch_size=training_config['batch_size'],
+        shuffle=True,
+        num_workers=training_config['num_workers'],
+        pin_memory=True 
+    )
+    
 
     '''Set Up Optimizer and Scheduler'''
     optimizer = optim.AdamW(
@@ -148,10 +141,10 @@ def main():
             assert batch_size == frames.size(0) == depth_maps.size(0), "Batch size mismatch"
             
             #Get number of patches
-            num_patches = model.rgb_tubelet_embed.num_patches
+            num_tubelets = model.rgb_tubelet_embed.num_tubelets
             
             #Generate the masks
-            masks = torch.rand(training_config['batch_size'], num_patches).to(device) < mask_ratio
+            masks = torch.rand(training_config['batch_size'], num_tubelets).to(device) < mask_ratio
             
             #Zero the gradients
             optimizer.zero_grad()
@@ -213,4 +206,4 @@ def main():
 
 if __name__ == "__main__":
     mp.set_start_method('spawn')
-    main()     
+    main()
