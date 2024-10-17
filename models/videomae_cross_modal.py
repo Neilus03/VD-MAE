@@ -47,10 +47,10 @@ class CrossModalVideoMAE(nn.Module):
         )
         
         #Get the number of patches from the tubelet embedding layer
-        num_patches = self.rgb_tubelet_embed.num_patches #The saem number of patches for RGB and Depth
+        num_tubelets = self.rgb_tubelet_embed.num_tubelets #The saem number of patches for RGB and Depth
         
         #Initialize positional encoding
-        self.pos_embed = nn.Parameter(torch.zeros(1, num_patches, config['embed_dim'])) 
+        self.pos_embed = nn.Parameter(torch.zeros(1, num_tubelets, config['embed_dim']))
         nn.init.trunc_normal_(self.pos_embed, std=0.02)
         
         
@@ -91,7 +91,7 @@ class CrossModalVideoMAE(nn.Module):
         #Normalize the RGB decoder output
         self.rgb_decoder_norm = nn.LayerNorm(config['embed_dim'], eps=1e-6)
         #Output layer for RGB frames to a shape of (patch_size, patch_size, 3)
-        self.rgb_head = nn.Linear(config['embed_dim'], config['patch_size'] ** 2 * 3)
+        self.rgb_head = nn.Linear(config['embed_dim'], config['patch_size'] ** 2 * 3) #CHECK THIS LINE'S OUTPUT DIMENSION (SUSPECTED TO BE PATCH_SIZE ** 2 * NUM_PATCHES**2 * 3)
         
         
         #Depth decoder: a lightweight transformer decoder that takes the Depth encoder output and reconstructs the Depth frames
@@ -112,7 +112,7 @@ class CrossModalVideoMAE(nn.Module):
         #Normalize the Depth decoder output
         self.depth_decoder_norm = nn.LayerNorm(config['decoder_embed_dim'], eps=1e-6)
         #Output layer for Depth frames to a shape of (patch_size, patch_size, 1)
-        self.depth_head = nn.Linear(config['decoder_embed_dim'], config['patch_size']**2 * 1)
+        self.depth_head = nn.Linear(config['decoder_embed_dim'], config['patch_size']**2 * 1) #CHECK THIS LINE'S OUTPUT DIMENSION (SUSPECTED TO BE PATCH_SIZE ** 2 * NUM_PATCHES**2 * 1)
 
 
         #Initialize the mask token
@@ -157,7 +157,7 @@ class CrossModalVideoMAE(nn.Module):
 
         # Ensure masks tensor shape is as expected and convert to boolean tensor if not already
         assert masks.shape == (B, embeddings.size(1)), "Mask tensor must have shape [B, N]"
-        masks = masks.bool()  # Convert to boolean tensor
+        masks = masks.bool()  # Convert to boolean tensoR
 
         # Apply masking, replace the masked embeddings with the mask token
         # Expand the mask token to the same shape as the embeddings
@@ -175,6 +175,8 @@ class CrossModalVideoMAE(nn.Module):
         # Normalize the encoder output
         embeddings = self.encoder_norm(embeddings)
 
+         #AT THIS POINT WE HAVE THE EMBEDDINGS OF THE BOTTLENECK
+        
         
         # Prepare the full sequence for the decoders
         # Map encoder output to decoder input dimension if they are different
@@ -220,9 +222,9 @@ class CrossModalVideoMAE(nn.Module):
         frames = frames.permute(0, 2, 1, 3, 4).reshape(B * T, C, H, W)  # Shape: [B*T, C, H, W]
         # Use unfold to extract patches
         patches = frames.unfold(2, patch_size, patch_size).unfold(3, patch_size, patch_size)
-        # patches shape: [B*T, C, num_patches_H, num_patches_W, patch_size, patch_size]
+        # patches shape: [B*T, C, num_tubelets_H, num_tubelets_W, patch_size, patch_size]
         # Rearrange dimensions
-        patches = patches.permute(0, 2, 3, 1, 4, 5)  # Shape: [B*T, num_patches_H, num_patches_W, C, patch_size, patch_size]
+        patches = patches.permute(0, 2, 3, 1, 4, 5)  # Shape: [B*T, num_tubelets_H, num_tubelets_W, C, patch_size, patch_size]
         # Flatten spatial dimensions
         patches = patches.contiguous().view(B, -1, patch_size * patch_size * C)  # Shape: [B, N, patch_size^2 * C]
         return patches
@@ -251,6 +253,7 @@ class CrossModalVideoMAE(nn.Module):
         # Only compute loss on masked positions
         # Flatten the masks to use as indices
         masks_flat = masks.view(-1)
+        
         # Flatten the patches and reconstructions
         rgb_patches_flat = rgb_patches.view(-1, rgb_patches.size(-1))
         depth_patches_flat = depth_patches.view(-1, depth_patches.size(-1))
@@ -301,10 +304,10 @@ if __name__ == '__main__':
     print(f"Depth Maps Shape: {depth_maps.shape}")
 
     # Generate random masks
-    num_patches = model.rgb_tubelet_embed.num_patches
-    masks = torch.rand(B, num_patches) < 0.75  # 75% of patches are masked
+    num_tubelets = model.rgb_tubelet_embed.num_tubelets
+    masks = torch.rand(B, num_tubelets) < 0.75  # 75% of patches are masked
 
-    print(f'num_patches: {num_patches}')
+    print(f'num_tubelets: {num_tubelets}')
     print(f"Mask Shape: {masks.shape}")
     
 
