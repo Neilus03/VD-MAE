@@ -22,7 +22,7 @@ import random
 import sys
 sys.path.append(os.path.join(os.path.dirname(__file__), '../depth_anything_v2'))
 
-# Import the Depth Anything V2 model from the specified module.
+# Import the Depth Anything  V2 model from the specified module.
 from depth_anything_v2.dpt import DepthAnythingV2
 
 # Load configuration settings from a YAML file (assuming you have a 'config.yaml' file).
@@ -32,7 +32,7 @@ with open('../config/config.yaml', 'r') as f:
 
 # Configure the device to be used for computation.
 # Use GPU ('cuda') if available; otherwise, fall back to CPU ('cpu').
-DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 # Define model configurations for the Depth Anything V2 model.
 # The 'vitl' configuration specifies the model architecture and parameters.
@@ -51,10 +51,10 @@ depth_model = DepthAnythingV2(**model_configs['vitl'])
 with warnings.catch_warnings():
     warnings.simplefilter("ignore", category=FutureWarning)
     # Load the pre-trained model weights from the checkpoint specified in the configuration.
-    depth_model.load_state_dict(torch.load(config['data']['depth_model_checkpoint'], map_location=DEVICE))
+    depth_model.load_state_dict(torch.load(config['data']['depth_model_checkpoint'], map_location=device))
 
 # Move the model to the configured device (GPU or CPU) and set it to evaluation mode.
-depth_model = depth_model.to(DEVICE).eval()
+depth_model = depth_model.to(device).eval()
 
 # Define a custom dataset class that inherits from PyTorch's Dataset class.
 class VideoFrameDataset(Dataset):
@@ -313,6 +313,8 @@ class VideoFrameDataset(Dataset):
         # Return the tensor containing the patches.
         return patches
 
+
+
 if __name__ == '__main__':
     import random
     import matplotlib.pyplot as plt
@@ -365,7 +367,7 @@ if __name__ == '__main__':
         dataset,                         # The dataset from which to load data.
         batch_size=batch_size,           # Number of sequences per batch.
         shuffle=True,                    # Shuffle the data at every epoch.
-        num_workers=0,                   # Number of subprocesses to use for data loading.
+        num_workers=4,                   # Number of subprocesses to use for data loading.
     )
 
     # Iterate over the DataLoader to process batches of data.
