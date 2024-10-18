@@ -122,6 +122,10 @@ class CrossModalVideoMAE(nn.Module):
         # Loss weighting factors
         self.alpha = config.get('alpha', 1.0)
         self.beta = config.get('beta', 1.0)
+
+        # Get embed dimensions
+        self.embed_dim = config['embed_dim']
+        self.decoder_embed_dim = config['decoder_embed_dim']
         
     def forward(self, rgb_frames, depth_maps, masks):
         '''
@@ -180,7 +184,7 @@ class CrossModalVideoMAE(nn.Module):
         
         # Prepare the full sequence for the decoders
         # Map encoder output to decoder input dimension if they are different
-        if config['embed_dim'] != config['decoder_embed_dim']:
+        if self.embed_dim != self.decoder_embed_dim:
             decoder_embeddings = nn.Linear(config['embed_dim'], config['decoder_embed_dim'], bias=False)
         else:
             decoder_embeddings = embeddings 
@@ -220,13 +224,17 @@ class CrossModalVideoMAE(nn.Module):
         B, C, T, H, W = frames.shape
         # Rearrange frames to [B * T, C, H, W]
         frames = frames.permute(0, 2, 1, 3, 4).reshape(B * T, C, H, W)  # Shape: [B*T, C, H, W]
+        print(f"Frames Shape: {frames.shape}")
         # Use unfold to extract patches
         patches = frames.unfold(2, patch_size, patch_size).unfold(3, patch_size, patch_size)
+        print(f"1st Patches Shape: {patches.shape}")
         # patches shape: [B*T, C, num_tubelets_H, num_tubelets_W, patch_size, patch_size]
         # Rearrange dimensions
         patches = patches.permute(0, 2, 3, 1, 4, 5)  # Shape: [B*T, num_tubelets_H, num_tubelets_W, C, patch_size, patch_size]
+        print(f"2nd Patches Shape: {patches.shape}")
         # Flatten spatial dimensions
         patches = patches.contiguous().view(B, -1, patch_size * patch_size * C)  # Shape: [B, N, patch_size^2 * C]
+        print(f"3rd Patches Shape: {patches.shape}")
         return patches
 
         
@@ -250,15 +258,29 @@ class CrossModalVideoMAE(nn.Module):
         rgb_patches = self.extract_patches(rgb_frames, self.rgb_tubelet_embed.patch_size[0])  # Shape: [B, N, patch_size^2 * 3]
         depth_patches = self.extract_patches(depth_maps, self.depth_tubelet_embed.patch_size[0])  # Shape: [B, N, patch_size^2 * 1]
 
+        print(f"RGB Patches Shape: {rgb_patches.shape}")
+        print(f"Depth Patches Shape: {depth_patches.shape}")
+
         # Only compute loss on masked positions
         # Flatten the masks to use as indices
         masks_flat = masks.view(-1)
+
+        print(f"Masks Shape: {masks.shape}")
+        print(f"Masks Flat Shape: {masks_flat.shape}")
         
         # Flatten the patches and reconstructions
         rgb_patches_flat = rgb_patches.view(-1, rgb_patches.size(-1))
         depth_patches_flat = depth_patches.view(-1, depth_patches.size(-1))
         rgb_recon_flat = rgb_recon.view(-1, rgb_recon.size(-1))
         depth_recon_flat = depth_recon.view(-1, depth_recon.size(-1))
+
+        print(f"RGB Patches Flat Shape: {rgb_patches_flat.shape}")
+        print(f"Depth Patches Flat Shape: {depth_patches_flat.shape}")
+
+        print(f"RGB Recon Flat Shape: {rgb_recon_flat.shape}")
+        print(f"Depth Recon Flat Shape: {depth_recon_flat.shape}")
+
+        # TODO change masks structure to fit with the patches
 
         # Select masked positions
         rgb_patches_masked = rgb_patches_flat[masks_flat]

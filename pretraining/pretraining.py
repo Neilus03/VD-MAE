@@ -60,6 +60,7 @@ def main():
     }
 
     depth_model = DepthAnythingV2(**model_configs_depth['vitl'])
+    depth_model = depth_model.to(device)
 
     #Set it into evaluation mode
     with torch.no_grad():
@@ -132,6 +133,7 @@ def main():
         #Iterate over the dataloader
         for batch_idx, batch in progress_bar:
             frames, _, depth_maps, _, _ = batch
+            depth_maps = depth_maps.permute(0, 2, 1, 3, 4)  # TODO change this in the dataloader
             #Send data to device
             frames = frames.to(device)
             depth_maps = depth_maps.to(device)
@@ -145,6 +147,7 @@ def main():
             
             #Generate the masks
             masks = torch.rand(training_config['batch_size'], num_tubelets).to(device) < mask_ratio
+            print('MASKS SHAPE:', masks.shape)
             
             #Zero the gradients
             optimizer.zero_grad()
