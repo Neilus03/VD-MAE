@@ -117,7 +117,7 @@ def main():
     num_epochs = training_config['num_epochs']
     mask_ratio = training_config['mask_ratio']
 
-    scaler = torch.cuda.amp.GradScaler('cuda') #Mixed precision training for optimization
+    scaler = torch.cuda.amp.GradScaler() #Mixed precision training for optimization
 
     for epoch in range(num_epochs):
         # Set the model to train mode
@@ -141,24 +141,57 @@ def main():
             # Batch size
             batch_size = frames.size(0) 
             assert batch_size == frames.size(0) == depth_maps.size(0), "Batch size mismatch"
-            
-            #Get number of patches
+
+            # Get number of tubelets
             num_tubelets = model.rgb_tubelet_embed.num_tubelets
+
+            ### -----------------------------------------------------------------------------------
+
+            # Get patch and tubelet size
+            patch_size = model_config['patch_size']  # Assume this is defined properly
+            tubelet_size = model_config['tubelet_size']
+
+            B, C, T, H, W = frames.shape  # Original frames shape
+            num_patches_per_frame_H = H // patch_size
+            num_patches_per_frame_W = W // patch_size
+            num_patches_per_frame = num_patches_per_frame_H * num_patches_per_frame_W  # Patches in one frame
+            N = num_patches_per_frame * T  # Total number of patches across all frames
+
+            # Number of tubelets
+            num_tubelets = T // tubelet_size
+            if T % tubelet_size != 0:
+                raise ValueError(f"Tubelet size {tubelet_size} does not evenly divide number of frames {T}.")
+
+            # Create random masks for tubelets
+            masks_forward = torch.rand(B, num_tubelets * num_patches_per_frame).to(frames.device) < mask_ratio  # Shape: [B, num_tubelets * num_patches_per_frame]
+
+            # Reshape the mask to match the tubelet structure
+            masks_reshaped = masks_forward.view(B, num_tubelets, num_patches_per_frame)  # Shape: [B, num_tubelets, num_patches_per_frame]
+
+            # Group patches by tubelets: [B, tubelet_size, num_tubelets, num_patches_per_frame]
+            masks_loss = masks_reshaped.unsqueeze(1).expand(-1, tubelet_size, -1, -1)  # Shape: [B, tubelet_size, num_tubelets, num_patches_per_frame]
+
+            # Reshape masks_loss to final desired shape
+            masks_loss = masks_loss.permute(0, 2, 1, 3)  # Shape: [B, num_tubelets, tubelet_size, num_patches_per_frame]
+            masks_loss = masks_loss.contiguous().view(B, T, num_patches_per_frame)  # Reshape to [B, T, num_patches_per_frame]
             
-            #Generate the masks
-            masks = torch.rand(training_config['batch_size'], num_tubelets).to(device) < mask_ratio
-            print('MASKS SHAPE:', masks.shape)
-            
+            ### -----------------------------------------------------------------------------------
+
             #Zero the gradients
             optimizer.zero_grad()
             
             #Forward pass
             with torch.cuda.amp.autocast():
                 #Get the reconstructions for the frames and depth maps
-                rgb_recon, depth_recon = model(frames, depth_maps, masks)
+                rgb_recon, depth_recon = model(frames, depth_maps, masks_forward)
                 #Calculate the losses
-                rgb_loss, depth_loss, loss = model.compute_loss(frames, depth_maps, rgb_recon, depth_recon, masks)
+                rgb_loss, depth_loss, loss = model.compute_loss(frames, depth_maps, rgb_recon, depth_recon, masks_loss)
                 
+            print(f"Loss: {loss}, Type: {type(loss)}")
+            print(f"Loss device: {loss.device}")
+            print(f"Model outputs: rgb_recon device: {rgb_recon.device}, depth_recon device: {depth_recon.device}")
+
+
             #Backward pass
             scaler.scale(loss).backward()
             scaler.step(optimizer)
