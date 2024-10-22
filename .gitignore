@@ -2,3 +2,6 @@
 *json
 /dep*
 *.png 
+wandb/
+*/__pycache__
+*.out
