@@ -1,8 +1,8 @@
 model:
   img_size: 224            # Image size
   patch_size: 16           # Patch size
-  num_frames: 32           # Number of frames
-  tubelet_size: 8          # Tubelet size
+  num_frames: 8           # Number of frames
+  tubelet_size: 4          # Tubelet size
   embed_dim: 768           # Embedding dimension for both encoder and embeddings
   frame_interval: 1        # Frame interval for the tubelets
 
@@ -15,25 +15,26 @@ model:
   decoder_num_heads: 8     # Number of attention heads in the decoders
   decoder_mlp_ratio: 4     # MLP ratio in the decoders
 
-  
-
-
 training:
-  batch_size: 8
+  batch_size: 4
   num_epochs: 1000
   lr: 0.00003
   weight_decay: 0.0001
-  model_checkpoint_path: /home/ndelafuente/VD-MAE/checkpoints/
+  model_checkpoint_path: ../checkpoints
   num_workers: 0
   mask_ratio: 0.75         # Mask ratio for training
   alpha: 1.0               # Weight for RGB loss
   beta: 1.0                # Weight for Depth loss 
+
 data:
-  depth_model_checkpoint: /home/ndelafuente/VD-MAE/depth_anything_v2/checkpoints/depth_anything_v2_vitl.pth
-  finevideo_path: /data/datasets/finevideo
+  depth_model_checkpoint: ../depth_anything_v2/checkpoints/depth_anything_v2_vitl.pth
+  finevideo_path: /data/datasets/finevideo/sports_videos
+  depth_stats:
+    mean: 0.5
+    std: 0.5
 
 wandb: 
-  entity: Neilus03
+  entity: cvc-mireia #Neilus03
   project: VD-MAE
-  name: pretraining 
+  name: pretraining
   log_interval: 10

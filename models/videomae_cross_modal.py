@@ -115,7 +115,7 @@ class CrossModalVideoMAE(nn.Module):
         ])
         #Normalize the Depth decoder output
         self.depth_decoder_norm = nn.LayerNorm(config['decoder_embed_dim'], eps=1e-6)
-        #Output layer for Depth frames to a shape of (patch_size, patch_size, 1)
+        #Output layer for Depth frames to a shape of (patch_size, patch_size, 1) 
         self.depth_head = nn.Linear(config['decoder_embed_dim'], config['tubelet_size']*config['patch_size']**2 * 1) #CHECK THIS LINE'S OUTPUT DIMENSION (SUSPECTED TO BE PATCH_SIZE ** 2 * NUM_PATCHES**2 * 1)
         #self.depth_head = nn.Linear(config['decoder_embed_dim'], config['patch_size'] ** 2 * num_patches * 1)
 
@@ -277,8 +277,8 @@ class CrossModalVideoMAE(nn.Module):
         Parameters:
             - rgb_frames: Original RGB frames, shape [B, 3, T, H, W]
             - depth_maps: Original Depth maps, shape [B, 1, T, H, W]
-            - rgb_recon: Reconstructed RGB patches, shape [B, N, patch_size^2 * 3]
-            - depth_recon: Reconstructed Depth patches, shape [B, N, patch_size^2 * 1]
+            - rgb_recon: Reconstructed RGB patches, shape [B, T, num_patches_per_frame, patch_size^2 * 3]
+            - depth_recon: Reconstructed Depth patches, shape [B, T, num_patches_per_frame, patch_size^2 * 1]
             - masks: Boolean Tensor indicating masked positions, shape [B, N]
 
         Returns:
@@ -286,6 +286,41 @@ class CrossModalVideoMAE(nn.Module):
             - depth_loss: Depth reconstruction loss
             - total_loss: The total loss computed as a weighted sum of RGB and Depth losses
         '''
+
+        # Change reconstruction shape: divide the last dimension into 3 for RGB
+        # [B, T, num_patches_per_frame, patch_size^2 * 3] -> [B, T, num_patches_per_frame, patch_size^2, 3]
+        rgb_recon_visual = rgb_recon.view(rgb_recon.size(0), rgb_recon.size(1), rgb_recon.size(2), self.rgb_tubelet_embed.patch_size[0] ** 2, 3)
+        # [B, T, num_patches_per_frame, patch_size^2 * 1] -> [B, T, num_patches_per_frame, patch_size^2, 1]
+        depth_recon_visual = depth_recon.view(depth_recon.size(0), depth_recon.size(1), depth_recon.size(2), self.depth_tubelet_embed.patch_size[0] ** 2, 1)
+
+        # Permute channel indexation to idx 1:
+        # [B, T, num_patches_per_frame, patch_size^2, 3] -> [B, 3, T, num_patches_per_frame, patch_size^2]
+        rgb_recon_visual = rgb_recon_visual.permute(0, 4, 1, 2, 3)
+        # [B, T, num_patches_per_frame, patch_size^2, 1] -> [B, 1, T, num_patches_per_frame, patch_size^2]
+        depth_recon_visual = depth_recon_visual.permute(0, 4, 1, 2, 3)
+
+        # Group pixel values using patch size information:
+        # [B, 3, T, num_patches_per_frame, patch_size^2] -> [B, 3, T, num_patches_per_frame, patch_size, patch_size]
+        rgb_recon_visual = rgb_recon_visual.view(rgb_recon_visual.size(0), rgb_recon_visual.size(1), rgb_recon_visual.size(2), rgb_recon_visual.size(3), self.rgb_tubelet_embed.patch_size[0], self.rgb_tubelet_embed.patch_size[0])
+        # [B, 1, T, num_patches_per_frame, patch_size^2] -> [B, 1, T, num_patches_per_frame, patch_size, patch_size]
+        depth_recon_visual = depth_recon_visual.view(depth_recon_visual.size(0), depth_recon_visual.size(1), depth_recon_visual.size(2), depth_recon_visual.size(3), self.depth_tubelet_embed.patch_size[0], self.depth_tubelet_embed.patch_size[0])
+
+        # Group pixel values using num patches per frame information:
+        num_patches_per_frame = 14 # TODO hardcoded for now
+        # [B, 3, T, num_patches_per_frame, patch_size, patch_size] -> [B, 3, T, H, W]
+        rgb_recon_visual = rgb_recon_visual.view(rgb_recon_visual.size(0), rgb_recon_visual.size(1), rgb_recon_visual.size(2), self.rgb_tubelet_embed.patch_size[0] * num_patches_per_frame, self.rgb_tubelet_embed.patch_size[0] * num_patches_per_frame)
+        # [B, 1, T, num_patches_per_frame, patch_size, patch_size] -> [B, 1, T, H, W]
+        depth_recon_visual = depth_recon_visual.view(depth_recon_visual.size(0), depth_recon_visual.size(1), depth_recon_visual.size(2), self.depth_tubelet_embed.patch_size[0] * num_patches_per_frame, self.depth_tubelet_embed.patch_size[0] * num_patches_per_frame)
+
+        # TODO masks
+
+        log_visualizations(rgb_frames, depth_maps,
+                           rgb_recon_visual,
+                           depth_recon_visual,
+                           None,
+                           0,
+                           0,
+                           'Train')
 
         # Extract original patches
         rgb_patches = self.extract_patches(rgb_frames, self.rgb_tubelet_embed.patch_size[0])  # Shape: [B, N, patch_size^2 * 3]
