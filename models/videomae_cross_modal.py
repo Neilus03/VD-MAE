@@ -210,7 +210,7 @@ class CrossModalVideoMAE(nn.Module):
         rgb_embeddings = self.rgb_decoder_norm(rgb_embeddings)
         print(f"FORWARD - RGB Decoder Output Shape after normalization: {rgb_embeddings.shape}")
         # Reconstruct the RGB patches
-        rgb_reconstruction = self.rgb_head(rgb_embeddings)  # Shape: [B, N, 3 * patch_size ** 2]
+        rgb_reconstruction = self.rgb_head(rgb_embeddings)  # Shape: [B, N, 3 * num_patches]
         print(f"FORWARD - RGB Reconstruction Shape: {rgb_reconstruction.shape}")
 
         # Depth Decoder
@@ -222,7 +222,7 @@ class CrossModalVideoMAE(nn.Module):
         depth_embeddings = self.depth_decoder_norm(depth_embeddings)
         print(f"FORWARD - Depth Decoder Output Shape after normalization: {depth_embeddings.shape}")
         # Reconstruct the Depth patches
-        depth_reconstruction = self.depth_head(depth_embeddings)  # Shape: [B, N, 1 * patch_size ** 2]
+        depth_reconstruction = self.depth_head(depth_embeddings)  # Shape: [B, N, 1 * num_patches]
         print(f"FORWARD - Depth Reconstruction Shape: {depth_reconstruction.shape}")
 
         ### -----------------------------------------------------------------------------------

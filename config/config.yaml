@@ -2,7 +2,7 @@ model:
   img_size: 224            # Image size
   patch_size: 16           # Patch size
   num_frames: 8           # Number of frames
-  tubelet_size: 4          # Tubelet size
+  tubelet_size: 2          # Tubelet size
   embed_dim: 768           # Embedding dimension for both encoder and embeddings
   frame_interval: 1        # Frame interval for the tubelets
 

@@ -172,25 +172,34 @@ def log_visualizations(rgb_frames, depth_maps, reconstructed_image, reconstructe
     depth_std = config['data']['depth_stats']['std']
     img_size = config['model']['img_size']
     patch_size = config['model']['patch_size']
-
+    print(f"1-Original RGB frames shape: {rgb_frames.shape}")
+    print(f"1-Original Depth maps shape: {depth_maps.shape}")
     # Select the first sample in the batch
     original_image = rgb_frames[0].detach().cpu()  # Shape: (3, T, H, W)
     original_depth = depth_maps[0].detach().cpu()  # Shape: (1, T, H, W)
+    print(f'2-First image in batch shape: {original_image.shape}')
+    print(f'2-First depth map in batch shape: {original_depth.shape}')
 
     # Select the first frame in the sequence
     original_image = original_image[:, 0]  # Shape: (3, H, W)
     original_depth = original_depth[:, 0]  # Shape: (1, H, W)
-
+    print(f"3-Original RGB image shape: {original_image.shape}")
+    print(f"3-Original Depth map shape: {original_depth.shape}")
     # Same for reconstructed image
     reconstructed_image = reconstructed_image.detach().cpu()
     reconstructed_depth = reconstructed_depth.detach().cpu()
+    print(f"4-Reconstructed RGB image shape: {reconstructed_image.shape}")
+    print(f"4-Reconstructed Depth map shape: {reconstructed_depth.shape}")
 
     # Select the first frame in the sequence
     reconstructed_image = reconstructed_image[:, :, 0]  # Shape: (B, 3, H, W)
     reconstructed_depth = reconstructed_depth[:, :, 0]  # Shape: (B, 1, H, W)
+    print(f"5-Reconstructed RGB image shape: {reconstructed_image.shape}")
+    print(f"5-Reconstructed Depth map shape: {reconstructed_depth.shape}")    
 
     # Denormalize original RGB image
-    original_rgb_image = denormalize_RGB(original_image).permute(1, 2, 0).clamp(0, 1).numpy()
+    #original_rgb_image = denormalize_RGB(original_image).permute(1, 2, 0).clamp(0, 1).numpy()
+    original_rgb_image = original_image
     # Denormalize original depth map
     original_depth_map = original_depth.numpy()
     original_depth_map = original_depth_map * depth_std + depth_mean
@@ -203,7 +212,8 @@ def log_visualizations(rgb_frames, depth_maps, reconstructed_image, reconstructe
     original_patches_depth = extract_patches(original_depth, patch_size)  # Shape: (num_patches, 1, patch_size, patch_size)
 
     # Denormalize patches
-    original_patches_rgb_denorm = denormalize_RGB(original_patches_rgb).clamp(0, 1).numpy()  # Shape: (num_patches, 3, patch_size, patch_size)
+    #original_patches_rgb_denorm = denormalize_RGB(original_patches_rgb).clamp(0, 1).numpy()  # Shape: (num_patches, 3, patch_size, patch_size)
+    original_patches_rgb_denorm = original_patches_rgb.numpy()
     original_patches_depth_denorm = original_patches_depth.numpy()
     original_patches_depth_denorm = original_patches_depth_denorm * depth_std + depth_mean  # Shape: (num_patches, 1, patch_size, patch_size)
     original_patches_depth_denorm = original_patches_depth_denorm.squeeze(1)  # Shape: (num_patches, patch_size, patch_size)
@@ -218,7 +228,8 @@ def log_visualizations(rgb_frames, depth_maps, reconstructed_image, reconstructe
     num_patches_per_row = img_size // patch_size
     assembled_original_rgb = assemble_patches_with_gaps(original_patches_rgb_denorm, gap_size, num_patches_per_row, patch_size, num_channels=3)
     assembled_original_depth = assemble_patches_with_gaps(original_patches_depth_viz, gap_size, num_patches_per_row, patch_size, depth=True)
-
+    print(f"6-Assembled original RGB image shape: {assembled_original_rgb.shape}")
+    print(f"6-Assembled original Depth map shape: {assembled_original_depth.shape}")
     # # Masked patches
     # masked_patches = original_image.clone()
     # masked_indices = (mask[0] == 1).nonzero(as_tuple=False).squeeze()
@@ -245,10 +256,12 @@ def log_visualizations(rgb_frames, depth_maps, reconstructed_image, reconstructe
     # assembled_masked_depth = assemble_patches_with_gaps(masked_patches_depth_viz, gap_size, num_patches_per_row, patch_size, depth=True)
 
     # Reconstructed images
-    reconstructed_rgb_denorm = denormalize_RGB(reconstructed_image[0].detach().cpu()).permute(1, 2, 0).clamp(0, 1).numpy()
+    #reconstructed_rgb_denorm = denormalize_RGB(reconstructed_image[0].detach().cpu()).permute(1, 2, 0).clamp(0, 1).numpy()
+    reconstructed_rgb_denorm = reconstructed_image[0].detach().cpu()
     reconstructed_depth_map = reconstructed_depth[0, 0].detach().cpu().numpy()
     reconstructed_depth_map = reconstructed_depth_map * depth_std + depth_mean
-
+    print(f"7-Reconstructed RGB image shape: {reconstructed_rgb_denorm.shape}")
+    print(f"7-Reconstructed Depth map shape: {reconstructed_depth_map.shape}")
     # Normalize reconstructed depth map for visualization
     recon_depth_min = reconstructed_depth_map.min()
     recon_depth_max = reconstructed_depth_map.max()

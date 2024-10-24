@@ -4,7 +4,7 @@ import torch
 
 class TubeletEmbed(nn.Module):
     """Video to Tubelet Embedding"""
-    def __init__(self, img_size=224, patch_size=16, num_frames=16, tubelet_size=2, in_chans=3, embed_dim=768):
+    def __init__(self, img_size=224, patch_size=16, num_frames=16, tubelet_size=4, in_chans=3, embed_dim=768):
         super().__init__()
         # Ensure img_size and patch_size are tuples
         img_size = to_2tuple(img_size)
@@ -18,7 +18,7 @@ class TubeletEmbed(nn.Module):
 
         # Calculate the number of patches
         self.num_tubelets = (img_size[0] // patch_size[0]) * (img_size[1] // patch_size[1]) * (num_frames // tubelet_size)
-
+        print(f"Number of tubelets: {self.num_tubelets}")
         # Define the 3D convolutional layer
         self.proj = nn.Conv3d(
             in_channels=in_chans,
@@ -31,9 +31,13 @@ class TubeletEmbed(nn.Module):
         """
         x: Input tensor of shape [B, C, T, H, W]
         """
+        print(f"Input shape: {x.shape}")
         x = self.proj(x)  # Shape: [B, embed_dim, T', H', W']
+        print(f"Shape after 3D Conv: {x.shape}")
         x = x.flatten(2)  # Flatten the spatial and temporal dimensions
+        print(f"Shape after flatten(2): {x.shape}")
         x = x.transpose(1, 2)  # Shape: [B, N, embed_dim], where N = T' * H' * W'
+        print(f"Shape after transpose(1, 2): {x.shape}")
         return x
     
 
