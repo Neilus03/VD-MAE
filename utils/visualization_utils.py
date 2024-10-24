@@ -190,6 +190,9 @@ def log_visualizations(rgb_frames, depth_maps, reconstructed_image, reconstructe
     reconstructed_depth = reconstructed_depth.detach().cpu()
     print(f"4-Reconstructed RGB image shape: {reconstructed_image.shape}")
     print(f"4-Reconstructed Depth map shape: {reconstructed_depth.shape}")
+    # Same for mask
+    mask = mask[:, 0]
+    print('MASKS SHAPE:', mask.shape)
 
     # Select the first frame in the sequence
     reconstructed_image = reconstructed_image[:, :, 0]  # Shape: (B, 3, H, W)
@@ -210,6 +213,7 @@ def log_visualizations(rgb_frames, depth_maps, reconstructed_image, reconstructe
     # Extract patches from the original image
     original_patches_rgb = extract_patches(original_image, patch_size)  # Shape: (num_patches, 3, patch_size, patch_size)
     original_patches_depth = extract_patches(original_depth, patch_size)  # Shape: (num_patches, 1, patch_size, patch_size)
+    original_patches = torch.cat([original_patches_rgb, original_patches_depth], dim=1)  # Shape: (num_patches, 4, patch_size, patch_size)
 
     # Denormalize patches
     #original_patches_rgb_denorm = denormalize_RGB(original_patches_rgb).clamp(0, 1).numpy()  # Shape: (num_patches, 3, patch_size, patch_size)
@@ -230,30 +234,31 @@ def log_visualizations(rgb_frames, depth_maps, reconstructed_image, reconstructe
     assembled_original_depth = assemble_patches_with_gaps(original_patches_depth_viz, gap_size, num_patches_per_row, patch_size, depth=True)
     print(f"6-Assembled original RGB image shape: {assembled_original_rgb.shape}")
     print(f"6-Assembled original Depth map shape: {assembled_original_depth.shape}")
-    # # Masked patches
-    # masked_patches = original_image.clone()
-    # masked_indices = (mask[0] == 1).nonzero(as_tuple=False).squeeze()
-    # masked_patches[masked_indices] = 0  # Set masked patches to zero
+    # Masked patches
+    masked_patches = original_patches.clone()
+    print(f'masked_patches shape: {masked_patches.shape}')
+    masked_indices = (mask[0] == 1).nonzero(as_tuple=False).squeeze()
+    masked_patches[masked_indices] = 0  # Set masked patches to zero
 
-    # # Extract masked patches for rgb and depth separately
-    # masked_patches_rgb = masked_patches[:, :3, :, :] # Shape: (num_patches, 3, patch_size, patch_size)
-    # masked_patches_depth = masked_patches[:, 3:, :, :] # Shape: (num_patches, 1, patch_size, patch_size)
+    # Extract masked patches for rgb and depth separately
+    masked_patches_rgb = masked_patches[:, :3, :, :] # Shape: (num_patches, 3, patch_size, patch_size)
+    masked_patches_depth = masked_patches[:, 3:, :, :] # Shape: (num_patches, 1, patch_size, patch_size)
 
-    # # Denormalize masked patches
-    # masked_patches_rgb_denorm = denormalize_RGB(masked_patches_rgb).clamp(0, 1).numpy()
-    # masked_patches_depth_denorm = masked_patches_depth.numpy()
-    # # Denormalize masked depth patches
-    # masked_patches_depth_denorm = denormalize_depth(masked_patches_depth, depth_mean, depth_std)
-    # masked_patches_depth_denorm = masked_patches_depth_denorm.squeeze(1)
+    # Denormalize masked patches
+    masked_patches_rgb_denorm = denormalize_RGB(masked_patches_rgb).clamp(0, 1).numpy()
+    masked_patches_depth_denorm = masked_patches_depth.numpy()
+    # Denormalize masked depth patches
+    masked_patches_depth_denorm = denormalize_depth(masked_patches_depth, depth_mean, depth_std)
+    masked_patches_depth_denorm = masked_patches_depth_denorm.squeeze(1)
 
-    # # Normalize masked depth patches for visualization
-    # depth_min = masked_patches_depth_denorm.min()
-    # depth_max = masked_patches_depth_denorm.max()
-    # masked_patches_depth_viz = (masked_patches_depth_denorm - depth_min) / (depth_max - depth_min + 1e-8)
+    # Normalize masked depth patches for visualization
+    depth_min = masked_patches_depth_denorm.min()
+    depth_max = masked_patches_depth_denorm.max()
+    masked_patches_depth_viz = (masked_patches_depth_denorm - depth_min) / (depth_max - depth_min + 1e-8)
 
-    # # Assemble masked patches with gaps
-    # assembled_masked_rgb = assemble_patches_with_gaps(masked_patches_rgb_denorm, gap_size, num_patches_per_row, patch_size, num_channels=3)
-    # assembled_masked_depth = assemble_patches_with_gaps(masked_patches_depth_viz, gap_size, num_patches_per_row, patch_size, depth=True)
+    # Assemble masked patches with gaps
+    assembled_masked_rgb = assemble_patches_with_gaps(masked_patches_rgb_denorm, gap_size, num_patches_per_row, patch_size, num_channels=3)
+    assembled_masked_depth = assemble_patches_with_gaps(masked_patches_depth_viz, gap_size, num_patches_per_row, patch_size, depth=True)
 
     # Reconstructed images
     #reconstructed_rgb_denorm = denormalize_RGB(reconstructed_image[0].detach().cpu()).permute(1, 2, 0).clamp(0, 1).numpy()
@@ -289,15 +294,15 @@ def log_visualizations(rgb_frames, depth_maps, reconstructed_image, reconstructe
     buf2.seek(0)
     depth_images[f'{prefix} Assembled Original Depth Patches'] = wandb.Image(Image.open(buf2), caption='Original Depth Patches')
 
-    # # Masked Depth Map
-    # fig3 = plt.figure()
-    # plt.imshow(assembled_masked_depth, cmap='viridis')
-    # plt.axis('off')
-    # buf3 = io.BytesIO()
-    # plt.savefig(buf3, format='png', bbox_inches='tight', pad_inches=0)
-    # plt.close(fig3)
-    # buf3.seek(0)
-    # depth_images[f'{prefix} Masked Depth Map'] = wandb.Image(Image.open(buf3), caption='Masked Depth Map')
+    # Masked Depth Map
+    fig3 = plt.figure()
+    plt.imshow(assembled_masked_depth, cmap='viridis')
+    plt.axis('off')
+    buf3 = io.BytesIO()
+    plt.savefig(buf3, format='png', bbox_inches='tight', pad_inches=0)
+    plt.close(fig3)
+    buf3.seek(0)
+    depth_images[f'{prefix} Masked Depth Map'] = wandb.Image(Image.open(buf3), caption='Masked Depth Map')
 
     # Reconstructed Depth Map
     fig4 = plt.figure()

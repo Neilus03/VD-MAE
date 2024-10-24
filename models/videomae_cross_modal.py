@@ -317,7 +317,7 @@ class CrossModalVideoMAE(nn.Module):
         log_visualizations(rgb_frames, depth_maps,
                            rgb_recon_visual,
                            depth_recon_visual,
-                           None,
+                           masks,
                            0,
                            0,
                            'Train')
