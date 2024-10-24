@@ -118,6 +118,11 @@ def main():
     mask_ratio = training_config['mask_ratio']
 
     scaler = torch.cuda.amp.GradScaler() #Mixed precision training for optimization
+    
+    #set the best loss to infinity
+    best_loss = float('inf')
+    
+    wandb.watch(model, log='all')
 
     for epoch in range(num_epochs):
         # Set the model to train mode
@@ -191,7 +196,6 @@ def main():
             print(f"Loss device: {loss.device}")
             print(f"Model outputs: rgb_recon device: {rgb_recon.device}, depth_recon device: {depth_recon.device}")
 
-
             #Backward pass
             scaler.scale(loss).backward()
             scaler.step(optimizer)
@@ -205,9 +209,9 @@ def main():
             #Log metrics to wandb every N batches
             if batch_idx % wandb_config['log_interval'] == 0:
                 wandb.log({
-                    'loss': total_loss / (batch_idx + 1),
-                    'rgb_loss': total_rgb_loss / (batch_idx + 1),
-                    'depth_loss': total_depth_loss / (batch_idx + 1)
+                    'batch_loss': total_loss / (batch_idx + 1),
+                    'batch_rgb_loss': total_rgb_loss / (batch_idx + 1),
+                    'batch_depth_loss': total_depth_loss / (batch_idx + 1)
                 })
                 
         #Step the scheduler
