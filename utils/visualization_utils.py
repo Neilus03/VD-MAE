@@ -8,6 +8,7 @@ import io
 import torch
 from PIL import Image
 from tqdm import tqdm
+import torch.distributed as dist
 
 #sys.path.append(os.path.join(os.path.dirname(__file__), '../'))
 
@@ -168,6 +169,10 @@ def log_visualizations(rgb_frames, depth_maps, reconstructed_image, reconstructe
         batch_idx: current batch index
         prefix: 'Train' or 'Validation'
     '''
+    rank = dist.get_rank()
+    if rank != 0:
+        return
+    
     depth_mean = config['data']['depth_stats']['mean']
     depth_std = config['data']['depth_stats']['std']
     img_size = config['model']['img_size']

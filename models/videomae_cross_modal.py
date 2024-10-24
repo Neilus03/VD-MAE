@@ -4,8 +4,10 @@ import torch
 import torch.nn as nn
 import timm
 from timm.models.vision_transformer import PatchEmbed, Block
+#from timm.vision_transformer import PatchEmbed, Block
 from functools import partial
 import os
+import torch.distributed as dist
 import sys
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '../utils'))
@@ -196,8 +198,12 @@ class CrossModalVideoMAE(nn.Module):
         
         # Prepare the full sequence for the decoders
         # Map encoder output to decoder input dimension if they are different
+        # Map encoder output to decoder input dimension if they are different
         if self.embed_dim != self.decoder_embed_dim:
-            decoder_embeddings = nn.Linear(config['embed_dim'], config['decoder_embed_dim'], bias=False)
+            # Define the linear layer in __init__
+            if not hasattr(self, 'encoder_to_decoder'):
+                self.encoder_to_decoder = nn.Linear(self.embed_dim, self.decoder_embed_dim, bias=False).to(rgb_frames.device)
+            decoder_embeddings = self.encoder_to_decoder(embeddings)
         else:
             decoder_embeddings = embeddings 
 
@@ -312,15 +318,19 @@ class CrossModalVideoMAE(nn.Module):
         # [B, 1, T, num_patches_per_frame, patch_size, patch_size] -> [B, 1, T, H, W]
         depth_recon_visual = depth_recon_visual.view(depth_recon_visual.size(0), depth_recon_visual.size(1), depth_recon_visual.size(2), self.depth_tubelet_embed.patch_size[0] * num_patches_per_frame, self.depth_tubelet_embed.patch_size[0] * num_patches_per_frame)
 
-        # TODO masks
-
-        log_visualizations(rgb_frames, depth_maps,
-                           rgb_recon_visual,
-                           depth_recon_visual,
-                           masks,
-                           0,
-                           0,
-                           'Train')
+        if dist.is_initialized():
+            rank = dist.get_rank()
+        else:
+            rank = 0
+  
+        if rank == 0:
+            log_visualizations(rgb_frames, depth_maps,
+                            rgb_recon_visual,
+                            depth_recon_visual,
+                            masks,
+                            0,
+                            0,
+                            'Train')
 
         # Extract original patches
         rgb_patches = self.extract_patches(rgb_frames, self.rgb_tubelet_embed.patch_size[0])  # Shape: [B, N, patch_size^2 * 3]

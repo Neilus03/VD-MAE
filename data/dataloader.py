@@ -36,29 +36,29 @@ device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 # Define model configurations for the Depth Anything V2 model.
 # The 'vitl' configuration specifies the model architecture and parameters.
-model_configs = {
-    'vitl': {
-        'encoder': 'vitl',               # Use the 'vitl' encoder architecture.
-        'features': 256,                 # Number of feature maps.
-        'out_channels': [256, 512, 1024, 1024]  # Output channels at different layers.
-    }
-}
+#model_configs = {
+#    'vitl': {
+#        'encoder': 'vitl',               # Use the 'vitl' encoder architecture.
+#        'features': 256,                 # Number of feature maps.
+#        'out_channels': [256, 512, 1024, 1024]  # Output channels at different layers.
+#    }
+#}
 
 # Initialize the Depth Anything V2 model with the specified configuration.
-depth_model = DepthAnythingV2(**model_configs['vitl'])
+#depth_model = DepthAnythingV2(**model_configs['vitl'])
 
 # Suppress future warnings during model loading.
-with warnings.catch_warnings():
-    warnings.simplefilter("ignore", category=FutureWarning)
+#with warnings.catch_warnings():
+#    warnings.simplefilter("ignore", category=FutureWarning)
     # Load the pre-trained model weights from the checkpoint specified in the configuration.
-    depth_model.load_state_dict(torch.load(config['data']['depth_model_checkpoint'], map_location=device))
+#    depth_model.load_state_dict(torch.load(config['data']['depth_model_checkpoint'], map_location=device))
 
 # Move the model to the configured device (GPU or CPU) and set it to evaluation mode.
-depth_model = depth_model.to(device).eval()
+#depth_model = depth_model.to(device).eval()
 
 # Define a custom dataset class that inherits from PyTorch's Dataset class.
 class VideoFrameDataset(Dataset):
-    def __init__(self, video_folder, transform=None, depth_model=None, num_frames=32, frame_interval=1):
+    def __init__(self, video_folder, transform=None, depth_model=None, num_frames=32, frame_interval=1, single_video_path=None):
         """
         Initialize the dataset with the specified parameters.
 
@@ -79,7 +79,11 @@ class VideoFrameDataset(Dataset):
         self.video_paths = []                     # List to store video file paths.
         self.video_frame_counts = {}              # Dictionary mapping video paths to frame counts.
         self.video_sequence_indices = []          # List to store (video_path, sequence_start_frame_idx) tuples.
-
+        self.video_files = []                     # List to store video files
+        
+        # Initialize single_video_path to whatever is passed in
+        self.single_video_path = single_video_path
+        
         # Build the list of video paths and frame counts.
         self._build_video_list()
 
@@ -90,14 +94,20 @@ class VideoFrameDataset(Dataset):
         """
         Build a list of video file paths and their corresponding frame counts.
         """
-        # Create a list of full paths to video files in the video folder.
-        video_files = [
-            os.path.join(self.video_folder, f) for f in os.listdir(self.video_folder)
-            if f.endswith(('.mp4', '.avi', '.mov'))  # Include only specified video file extensions.
-        ]
+        #If single_video_path is provided, use that instead of the video_folder
+        if self.single_video_path:
+            if os.path.isfile(self.single_video_path):
+                self.video_files = [self.single_video_path]
+        
+        else:
+            # Create a list of full paths to video files in the video folder.
+            self.video_files = [
+                os.path.join(self.video_folder, f) for f in os.listdir(self.video_folder)
+                if f.endswith(('.mp4', '.avi', '.mov'))  # Include only specified video file extensions.
+            ]
 
         # Iterate over each video file to process its frames.
-        for video_path in video_files:
+        for video_path in self.video_files:
             cap = cv2.VideoCapture(video_path)  # Open the video file using OpenCV.
 
             if not cap.isOpened():
