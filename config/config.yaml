@@ -34,7 +34,7 @@ data:
     std: 0.5
 
 wandb: 
-  entity: cvc-mireia #Neilus03
+  entity: Neilus03 #cvc-mireia
   project: VD-MAE
   name: pretraining
-  log_interval: 10
+  log_interval: 1
