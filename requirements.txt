@@ -1,4 +1,4 @@
-aiohappyeyeballs @ file:///croot/aiohappyeyeballs_1725434011349/work
+aiohappyeyeballs @  file:///croot/aiohappyeyeballs_1725434011349/work
 aiohttp @ file:///croot/aiohttp_1725527756643/work
 aiosignal==1.3.1
 alembic==1.13.3
