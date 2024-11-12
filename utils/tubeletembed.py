@@ -1,6 +1,11 @@
+import logging
 from timm.models.layers import to_2tuple
 import torch.nn as nn
 import torch
+
+# Configure the logger for this module
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)  # Set the logging level to INFO
 
 class TubeletEmbed(nn.Module):
     """Video to Tubelet Embedding"""
@@ -17,8 +22,14 @@ class TubeletEmbed(nn.Module):
         self.embed_dim = embed_dim
 
         # Calculate the number of patches
-        self.num_tubelets = (img_size[0] // patch_size[0]) * (img_size[1] // patch_size[1]) * (num_frames // tubelet_size)
-        print(f"Number of tubelets: {self.num_tubelets}")
+        self.num_tubelets = (
+            (img_size[0] // patch_size[0]) *
+            (img_size[1] // patch_size[1]) *
+            (num_frames // tubelet_size)
+        )
+        
+        logger.info(f"Number of tubelets: {self.num_tubelets}")
+        
         # Define the 3D convolutional layer
         self.proj = nn.Conv3d(
             in_channels=in_chans,
@@ -27,24 +38,27 @@ class TubeletEmbed(nn.Module):
             stride=(tubelet_size, patch_size[0], patch_size[1]) # Stride = kernel size, ensures that the convolutional kernels do not overlap and that the tubelets are extracted without redundancy.
         )
 
+
     def forward(self, x):
         """
         x: Input tensor of shape [B, C, T, H, W]
         """
-        print(f"Input shape: {x.shape}")
+        logger.info(f"Input shape: {x.shape}")
         x = self.proj(x)  # Shape: [B, embed_dim, T', H', W']
-        print(f"Shape after 3D Conv: {x.shape}")
+        logger.info(f"Shape after 3D Conv: {x.shape}")
         x = x.flatten(2)  # Flatten the spatial and temporal dimensions
-        print(f"Shape after flatten(2): {x.shape}")
+        logger.info(f"Shape after flatten(2): {x.shape}")
         x = x.transpose(1, 2)  # Shape: [B, N, embed_dim], where N = T' * H' * W'
-        print(f"Shape after transpose(1, 2): {x.shape}")
+        logger.info(f"Shape after transpose(1, 2): {x.shape}")
         return x
-    
+
 
 # Example usage
 if __name__ == "__main__":
+    # Configure root logger to display INFO level logs from the TubeletEmbed class
+    logging.basicConfig(level=logging.INFO)
+    
     model = TubeletEmbed()
     x = torch.randn(1, 3, 16, 224, 224)
     out = model(x)
-    print(out.shape)
 # Output: torch.Size([1, 784, 768])
