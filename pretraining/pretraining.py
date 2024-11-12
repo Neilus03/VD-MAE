@@ -105,7 +105,7 @@ def main():
     video_folder = data_config['finevideo_path'] if os.path.exists(data_config['finevideo_path']) else '/home/ndelafuente/VD-MAE/sports_videos'
 
     #single video path if we want to overfit to check if the model is learning
-    single_video_path = '/data/datasets/finevideo/sports_videos/sample_93.mp4'
+    single_video_path = '/data/datasets/finevideo/sports_videos/circle_animation.mp4'
 
     dataset = VideoFrameDataset(
             video_folder = video_folder,
@@ -202,21 +202,25 @@ def main():
             if T % tubelet_size != 0:
                 raise ValueError(f"Tubelet size {tubelet_size} does not evenly divide number of frames {T}.")
 
-            # Create random masks for tubelets
-            masks_forward = torch.rand(B, num_tubelets * num_patches_per_frame).to(frames.device) < mask_ratio  # Shape: [B, num_tubelets * num_patches_per_frame]
+            # Create separate random masks for RGB and Depth
+            rgb_masks_forward = torch.rand(B, num_tubelets * num_patches_per_frame, device=frames.device) < mask_ratio
+            depth_masks_forward = torch.rand(B, num_tubelets * num_patches_per_frame, device=frames.device) < mask_ratio
 
-            # Reshape the mask to match the tubelet structure
-            masks_reshaped = masks_forward.view(B, num_tubelets, num_patches_per_frame)  # Shape: [B, num_tubelets, num_patches_per_frame]
+            # Reshape the masks to match the tubelet structure
+            rgb_masks_reshaped = rgb_masks_forward.view(B, num_tubelets, num_patches_per_frame)  # Shape: [B, num_tubelets, num_patches_per_frame]
+            depth_masks_reshaped = depth_masks_forward.view(B, num_tubelets, num_patches_per_frame)  # Shape: [B, num_tubelets, num_patches_per_frame]
 
-            # Group patches by tubelets: [B, tubelet_size, num_tubelets, num_patches_per_frame]
-            masks_loss = masks_reshaped.unsqueeze(1).expand(-1, tubelet_size, -1, -1)  # Shape: [B, tubelet_size, num_tubelets, num_patches_per_frame]
+            # Group patches by tubelets and expand to match tubelet structure
+            rgb_masks_loss = rgb_masks_reshaped.unsqueeze(1).expand(-1, tubelet_size, -1, -1)  # Shape: [B, tubelet_size, num_tubelets, num_patches_per_frame]
+            depth_masks_loss = depth_masks_reshaped.unsqueeze(1).expand(-1, tubelet_size, -1, -1)  # Shape: [B, tubelet_size, num_tubelets, num_patches_per_frame]
 
             # Reshape masks_loss to final desired shape
-            masks_loss = masks_loss.permute(0, 2, 1, 3)  # Shape: [B, num_tubelets, tubelet_size, num_patches_per_frame]
-            masks_loss = masks_loss.contiguous().view(B, T, num_patches_per_frame)  # Reshape to [B, T, num_patches_per_frame]
-            
-            ### -----------------------------------------------------------------------------------
+            rgb_masks = rgb_masks_loss.permute(0, 2, 1, 3).contiguous().view(B, T, num_patches_per_frame)  # Shape: [B, T, num_patches_per_frame]
+            depth_masks = depth_masks_loss.permute(0, 2, 1, 3).contiguous().view(B, T, num_patches_per_frame)  # Shape: [B, T, num_patches_per_frame]
 
+            # rgb_masks and depth_masks are now ready to be passed to the forward method
+
+            ### -----------------------------------------------------------------------------------
             
             accumulation_steps = 4  # Accumulate gradients for 4 steps
             #Zero the gradients
@@ -225,9 +229,9 @@ def main():
             #Forward pass
             with torch.amp.autocast('cuda'):
                 #Get the reconstructions for the frames and depth maps
-                rgb_recon, depth_recon = model(frames, depth_maps, masks_forward)
+                rgb_recon, depth_recon = model(frames, depth_maps, rgb_masks_forward, depth_masks_forward)
                 #Calculate the losses
-                rgb_loss, depth_loss, loss = model.module.compute_loss(frames, depth_maps, rgb_recon, depth_recon, masks_loss)
+                rgb_loss, depth_loss, loss = model.module.compute_loss(frames, depth_maps, rgb_recon, depth_recon, rgb_masks_loss, depth_masks_loss)
                 
             print(f"Loss: {loss}, Type: {type(loss)}")
             print(f"Loss device: {loss.device}")

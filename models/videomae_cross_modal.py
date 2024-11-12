@@ -133,120 +133,84 @@ class CrossModalVideoMAE(nn.Module):
         self.embed_dim = config['embed_dim']
         self.decoder_embed_dim = config['decoder_embed_dim']
         
-    def forward(self, rgb_frames, depth_maps, masks):
+    def forward(self, rgb_frames, depth_maps, rgb_masks, depth_masks):
         '''
         Forward pass of the CrossModalVideoMAE model.
 
         Parameters:
             - rgb_frames: Tensor of shape [B, 3, T, H, W]
             - depth_maps: Tensor of shape [B, 1, T, H, W]
-            - masks: Boolean Tensor of shape [B, N], where N is the number of patches.
+            - rgb_masks: Boolean Tensor of shape [B, N], where N is the number of patches for RGB frames.
+            - depth_masks: Boolean Tensor of shape [B, N], where N is the number of patches for depth maps.
 
         Returns:
             - rgb_reconstruction: Reconstructed RGB patches.
             - depth_reconstruction: Reconstructed depth patches.
         '''
-        # Inputs are already in shape [B, 3, T, H, W] and [B, 1, T, H, W]
-
         B, C, T, H, W = rgb_frames.shape
         assert C == 3, "Input RGB tensor must have 3 channels"
-        print(f"FORWARD - RGB Frames Shape: {rgb_frames.shape}")
 
         _, C_d, T_d, H_d, W_d = depth_maps.shape
         assert C_d == 1, "Input Depth tensor must have 1 channel"
         assert T == T_d and H == H_d and W == W_d, "RGB and Depth tensors must have the same dimensions"
-        print(f"FORWARD - Depth Maps Shape: {depth_maps.shape}")
+
+        # TODO check fused embeddings; compare with previous version
 
         # Apply tubelet embedding to the RGB and Depth frames
         rgb_embed = self.rgb_tubelet_embed(rgb_frames)  # Shape: [B, N, embed_dim]
         depth_embed = self.depth_tubelet_embed(depth_maps)  # Shape: [B, N, embed_dim]
-  
-        # Fuse the embeddings via element-wise addition
-        fused_embed = rgb_embed + depth_embed  # Shape: [B, N, embed_dim]
 
-        # Assign fused embeddings to 'embeddings' variable
-        embeddings = fused_embed
+        # Ensure that rgb_masks and depth_masks have the correct shape
+        N = rgb_embed.size(1)  # Total patches across all frames (for both RGB and depth)
+        assert rgb_masks.shape == (B, N), "RGB mask tensor must have shape [B, N]"
+        assert depth_masks.shape == (B, N), "Depth mask tensor must have shape [B, N]"
 
-        print(f"FORWARD - RGB Embeddings Shape: {rgb_embed.shape}")
-        print(f"FORWARD - Depth Embeddings Shape: {depth_embed.shape}")
-        print(f"FORWARD - Fused Embeddings Shape: {fused_embed.shape}")
+        # Apply masking to RGB embeddings
+        mask_tokens_rgb = self.mask_token.expand(B, N, -1)  # Shape: [B, N, embed_dim]
+        rgb_embeddings = torch.where(rgb_masks.unsqueeze(-1), mask_tokens_rgb, rgb_embed)  # Shape: [B, N, embed_dim]
 
-        # Ensure masks tensor shape is as expected and convert to boolean tensor if not already
-        assert masks.shape == (B, embeddings.size(1)), "Mask tensor must have shape [B, N]"
-        masks = masks.bool()  # Convert to boolean tensoR
-        print(f"FORWARD - Masks Shape: {masks.shape}")
+        # Apply masking to Depth embeddings
+        mask_tokens_depth = self.mask_token.expand(B, N, -1)  # Shape: [B, N, embed_dim]
+        depth_embeddings = torch.where(depth_masks.unsqueeze(-1), mask_tokens_depth, depth_embed)  # Shape: [B, N, embed_dim]
 
-        # Apply masking, replace the masked embeddings with the mask token
-        # Expand the mask token to the same shape as the embeddings
-        mask_tokens = self.mask_token.expand(B, embeddings.size(1), -1)  # Shape: [B, N, embed_dim]
-        print(f"FORWARD - Mask Tokens Shape: {mask_tokens.shape}")
-        # Replace the masked embeddings with the mask token
-        embeddings = torch.where(masks.unsqueeze(-1), mask_tokens, embeddings)  # Shape: [B, N, embed_dim]
-        print(f"FORWARD - Masked Embeddings Shape: {embeddings.shape}")
-        # Add positional encoding to the embeddings
-        embeddings += self.pos_embed  # Shape: [B, N, embed_dim]
-        print(f"FORWARD - Positional Encoded Embeddings Shape: {embeddings.shape}")
-        # Pass the embeddings through the transformer encoder layers
+        # Add positional encoding
+        rgb_embeddings += self.pos_embed
+        depth_embeddings += self.pos_embed
+
+        # Encode RGB and Depth separately
         for block in self.encoder:
-            embeddings = block(embeddings)
-
-        # Normalize the encoder output
-        embeddings = self.encoder_norm(embeddings)
-        print(f"FORWARD - Encoder Output Shape after normalzation: {embeddings.shape}")
-         #AT THIS POINT WE HAVE THE EMBEDDINGS OF THE BOTTLENECK
-        
-        
-        # Prepare the full sequence for the decoders
-        # Map encoder output to decoder input dimension if they are different
-        # Map encoder output to decoder input dimension if they are different
-        if self.embed_dim != self.decoder_embed_dim:
-            # Define the linear layer in __init__
-            if not hasattr(self, 'encoder_to_decoder'):
-                self.encoder_to_decoder = nn.Linear(self.embed_dim, self.decoder_embed_dim, bias=False).to(rgb_frames.device)
-            decoder_embeddings = self.encoder_to_decoder(embeddings)
-        else:
-            decoder_embeddings = embeddings 
-
-        # RGB Decoder
-        rgb_embeddings = decoder_embeddings  # Start with the prepared embeddings
-        print(f"FORWARD - RGB Decoder Embeddings Shape: {decoder_embeddings.shape}")
-        for block in self.rgb_decoder:
             rgb_embeddings = block(rgb_embeddings)
-        # Normalize the RGB decoder output
-        rgb_embeddings = self.rgb_decoder_norm(rgb_embeddings)
-        print(f"FORWARD - RGB Decoder Output Shape after normalization: {rgb_embeddings.shape}")
-        # Reconstruct the RGB patches
-        rgb_reconstruction = self.rgb_head(rgb_embeddings)  # Shape: [B, N, 3 * num_patches]
-        print(f"FORWARD - RGB Reconstruction Shape: {rgb_reconstruction.shape}")
+            depth_embeddings = block(depth_embeddings)
+
+        # Normalize encoder outputs
+        rgb_embeddings = self.encoder_norm(rgb_embeddings)
+        depth_embeddings = self.encoder_norm(depth_embeddings)
+
+        # Prepare the sequence for decoders
+        # RGB Decoder
+        rgb_decoder_embeddings = self.encoder_to_decoder(rgb_embeddings) if self.embed_dim != self.decoder_embed_dim else rgb_embeddings
+        for block in self.rgb_decoder:
+            rgb_decoder_embeddings = block(rgb_decoder_embeddings)
+
+        rgb_decoder_embeddings = self.rgb_decoder_norm(rgb_decoder_embeddings)
+        rgb_reconstruction = self.rgb_head(rgb_decoder_embeddings)  # Shape: [B, N, 3 * num_patches]
 
         # Depth Decoder
-        depth_embeddings = decoder_embeddings
-        print(f"FORWARD - Depth Decoder Embeddings Shape: {decoder_embeddings.shape}")
+        depth_decoder_embeddings = self.encoder_to_decoder(depth_embeddings) if self.embed_dim != self.decoder_embed_dim else depth_embeddings
         for block in self.depth_decoder:
-            depth_embeddings = block(depth_embeddings)
-        # Normalize the Depth decoder output
-        depth_embeddings = self.depth_decoder_norm(depth_embeddings)
-        print(f"FORWARD - Depth Decoder Output Shape after normalization: {depth_embeddings.shape}")
-        # Reconstruct the Depth patches
-        depth_reconstruction = self.depth_head(depth_embeddings)  # Shape: [B, N, 1 * num_patches]
-        print(f"FORWARD - Depth Reconstruction Shape: {depth_reconstruction.shape}")
+            depth_decoder_embeddings = block(depth_decoder_embeddings)
 
-        ### -----------------------------------------------------------------------------------
+        depth_decoder_embeddings = self.depth_decoder_norm(depth_decoder_embeddings)
+        depth_reconstruction = self.depth_head(depth_decoder_embeddings)  # Shape: [B, N, 1 * num_patches]
 
         # Get the number of patches per frame
         num_patches_per_frame = 14 * 14  # TODO hardcoded for now
 
-        # Reshape the RGB reconstruction to the desired shape
-        # Since we have T frames and the total number of patches is 784, 
-        # the number of frames (T) should divide 784 evenly.
+        # Reshape RGB reconstruction to the desired shape
         rgb_reconstruction = rgb_reconstruction.view(B, T, num_patches_per_frame, -1)  # Last dim will be 768
 
-        # Reshape the Depth reconstruction to the desired shape
+        # Reshape Depth reconstruction to the desired shape
         depth_reconstruction = depth_reconstruction.view(B, T, num_patches_per_frame, -1)  # Last dim will be 256
-
-        # Ensure the shapes are what you expect
-        print(f'Final RGB reconstruction shape: {rgb_reconstruction.shape}')  # Should be [B, T, 196, 768]
-        print(f'Final Depth reconstruction shape: {depth_reconstruction.shape}')  # Should be [B, T, 196, 256]
 
         return rgb_reconstruction, depth_reconstruction
 
@@ -276,59 +240,56 @@ class CrossModalVideoMAE(nn.Module):
 
         return patches
 
-    def compute_loss(self, rgb_frames, depth_maps, rgb_recon, depth_recon, masks):
+    def compute_loss(self, rgb_frames, depth_maps, rgb_recon, depth_recon, rgb_masks, depth_masks):
         '''
-        Compute the reconstruction loss.
+        Compute the reconstruction loss with separate masks for RGB and Depth.
 
         Parameters:
             - rgb_frames: Original RGB frames, shape [B, 3, T, H, W]
             - depth_maps: Original Depth maps, shape [B, 1, T, H, W]
             - rgb_recon: Reconstructed RGB patches, shape [B, T, num_patches_per_frame, patch_size^2 * 3]
             - depth_recon: Reconstructed Depth patches, shape [B, T, num_patches_per_frame, patch_size^2 * 1]
-            - masks: Boolean Tensor indicating masked positions, shape [B, N]
+            - rgb_masks: Boolean Tensor indicating masked positions for RGB, shape [B, N]
+            - depth_masks: Boolean Tensor indicating masked positions for Depth, shape [B, N]
 
         Returns:
             - rgb_loss: RGB reconstruction loss
             - depth_loss: Depth reconstruction loss
             - total_loss: The total loss computed as a weighted sum of RGB and Depth losses
         '''
+        B = 1
+        T = 8  # TODO hardcoded for now
 
         # Change reconstruction shape: divide the last dimension into 3 for RGB
-        # [B, T, num_patches_per_frame, patch_size^2 * 3] -> [B, T, num_patches_per_frame, patch_size^2, 3]
-        rgb_recon_visual = rgb_recon.view(rgb_recon.size(0), rgb_recon.size(1), rgb_recon.size(2), self.rgb_tubelet_embed.patch_size[0] ** 2, 3)
-        # [B, T, num_patches_per_frame, patch_size^2 * 1] -> [B, T, num_patches_per_frame, patch_size^2, 1]
-        depth_recon_visual = depth_recon.view(depth_recon.size(0), depth_recon.size(1), depth_recon.size(2), self.depth_tubelet_embed.patch_size[0] ** 2, 1)
+        rgb_recon_visual = rgb_recon.reshape(B, T, 196, 3, 256)  # TODO this 256 is hardcoded
+
+        # Change reconstruction shape: divide the last dimension into 1 for Depth
+        depth_recon_visual = depth_recon.reshape(B, T, 196, 1, 256)  # TODO this 256 is hardcoded
+        # shape [1, 8, 196, 3, 256]
 
         # Permute channel indexation to idx 1:
-        # [B, T, num_patches_per_frame, patch_size^2, 3] -> [B, 3, T, num_patches_per_frame, patch_size^2]
-        rgb_recon_visual = rgb_recon_visual.permute(0, 4, 1, 2, 3)
-        # [B, T, num_patches_per_frame, patch_size^2, 1] -> [B, 1, T, num_patches_per_frame, patch_size^2]
-        depth_recon_visual = depth_recon_visual.permute(0, 4, 1, 2, 3)
+        rgb_recon_visual = rgb_recon_visual.permute(0, 3, 1, 2, 4)
+        depth_recon_visual = depth_recon_visual.permute(0, 3, 1, 2, 4)
+        # shape [1, 3, 8, 196, 256]
 
-        # Group pixel values using patch size information:
-        # [B, 3, T, num_patches_per_frame, patch_size^2] -> [B, 3, T, num_patches_per_frame, patch_size, patch_size]
-        rgb_recon_visual = rgb_recon_visual.view(rgb_recon_visual.size(0), rgb_recon_visual.size(1), rgb_recon_visual.size(2), rgb_recon_visual.size(3), self.rgb_tubelet_embed.patch_size[0], self.rgb_tubelet_embed.patch_size[0])
-        # [B, 1, T, num_patches_per_frame, patch_size^2] -> [B, 1, T, num_patches_per_frame, patch_size, patch_size]
-        depth_recon_visual = depth_recon_visual.view(depth_recon_visual.size(0), depth_recon_visual.size(1), depth_recon_visual.size(2), depth_recon_visual.size(3), self.depth_tubelet_embed.patch_size[0], self.depth_tubelet_embed.patch_size[0])
+        rgb_recon_visual = rgb_recon_visual.reshape(B, 3, T, 14, 14, 16, 16)
+        depth_recon_visual = depth_recon_visual.reshape(B, 1, T, 14, 14, 16, 16)
 
-        # Group pixel values using num patches per frame information:
-        num_patches_per_frame = 14 # TODO hardcoded for now
-        # [B, 3, T, num_patches_per_frame, patch_size, patch_size] -> [B, 3, T, H, W]
-        rgb_recon_visual = rgb_recon_visual.view(rgb_recon_visual.size(0), rgb_recon_visual.size(1), rgb_recon_visual.size(2), self.rgb_tubelet_embed.patch_size[0] * num_patches_per_frame, self.rgb_tubelet_embed.patch_size[0] * num_patches_per_frame)
-        # [B, 1, T, num_patches_per_frame, patch_size, patch_size] -> [B, 1, T, H, W]
-        depth_recon_visual = depth_recon_visual.view(depth_recon_visual.size(0), depth_recon_visual.size(1), depth_recon_visual.size(2), self.depth_tubelet_embed.patch_size[0] * num_patches_per_frame, self.depth_tubelet_embed.patch_size[0] * num_patches_per_frame)
+        # Permute to get the desired shape [batch_size, num_channels, num_frames, frame_height, frame_width]
+        rgb_recon_visual = rgb_recon_visual.permute(0, 1, 2, 3, 5, 4, 6).reshape(B, 3, T, 224, 224)
+        depth_recon_visual = depth_recon_visual.permute(0, 1, 2, 3, 5, 4, 6).reshape(B, 1, T, 224, 224)
 
         if dist.is_initialized():
             rank = dist.get_rank()
         else:
             rank = 0
-  
+
         if rank == 0:
             log_visualizations(rgb_frames, depth_maps,
                             rgb_recon_visual,
                             depth_recon_visual,
-                            masks,
-                            0,
+                            rgb_masks,
+                            depth_masks,
                             0,
                             'Train')
 
@@ -336,19 +297,10 @@ class CrossModalVideoMAE(nn.Module):
         rgb_patches = self.extract_patches(rgb_frames, self.rgb_tubelet_embed.patch_size[0])  # Shape: [B, N, patch_size^2 * 3]
         depth_patches = self.extract_patches(depth_maps, self.depth_tubelet_embed.patch_size[0])  # Shape: [B, N, patch_size^2 * 1]
 
-        print(f"RGB Patches Shape: {rgb_patches.shape}")
-        print(f"Depth Patches Shape: {depth_patches.shape}")
-        print(f"RGB Recon Shape: {rgb_recon.shape}")
-        print(f"Depth Recon Shape: {depth_recon.shape}")
-        print('\n')
-
-        # Only compute loss on masked positions
-        # Flatten the masks to use as indices
-        masks_flat = masks.view(-1)
-
-        print(f"Masks Shape: {masks.shape}")
-        print(f"Masks Flat Shape: {masks_flat.shape}")
-        print('\n')
+        # Flatten the RGB and Depth masks to use as indices
+        # TODO I think this is not the correct structure
+        rgb_masks_flat = rgb_masks.view(-1)
+        depth_masks_flat = depth_masks.view(-1)
 
         # Flatten the patches and reconstructions
         rgb_patches_flat = rgb_patches.view(-1, rgb_patches.size(-1))  # Shape [B * num_patches, patch_size^2 * 3]
@@ -356,19 +308,11 @@ class CrossModalVideoMAE(nn.Module):
         rgb_recon_flat = rgb_recon.view(-1, rgb_recon.size(-1))  # Shape [B * N, patch_size^2 * 3]
         depth_recon_flat = depth_recon.view(-1, depth_recon.size(-1))
 
-        print(f"RGB Patches Flat Shape: {rgb_patches_flat.shape}")
-        print(f"Depth Patches Flat Shape: {depth_patches_flat.shape}")
-        print(f"RGB Recon Flat Shape: {rgb_recon_flat.shape}")
-        print(f"Depth Recon Flat Shape: {depth_recon_flat.shape}")
-        print('\n')
-
-        # Select masked positions
-        rgb_patches_masked = rgb_patches_flat[masks_flat]
-        depth_patches_masked = depth_patches_flat[masks_flat]
-
-        # TODO the shape of the reconstruction is NOT the same as the patches
-        rgb_recon_masked = rgb_recon_flat[masks_flat]
-        depth_recon_masked = depth_recon_flat[masks_flat]
+        # Select masked positions for RGB and Depth separately
+        rgb_patches_masked = rgb_patches_flat[rgb_masks_flat]
+        depth_patches_masked = depth_patches_flat[depth_masks_flat]
+        rgb_recon_masked = rgb_recon_flat[rgb_masks_flat]
+        depth_recon_masked = depth_recon_flat[depth_masks_flat]
 
         # Compute the loss
         loss_fn = nn.MSELoss()
@@ -379,7 +323,6 @@ class CrossModalVideoMAE(nn.Module):
         total_loss = self.alpha * rgb_loss + self.beta * depth_loss
 
         return rgb_loss, depth_loss, total_loss
-
 
 
 if __name__ == '__main__':
