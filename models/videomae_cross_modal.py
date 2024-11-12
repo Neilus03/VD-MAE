@@ -9,10 +9,15 @@ from functools import partial
 import os
 import torch.distributed as dist
 import sys
+import logging
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '../utils'))
 from tubeletembed import TubeletEmbed
 from visualization_utils import log_visualizations
+
+# Configure the logger for this module
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)  # Set the logging level to INFO
 
 
 class CrossModalVideoMAE(nn.Module):
@@ -119,7 +124,7 @@ class CrossModalVideoMAE(nn.Module):
 
 
         #Initialize the mask token
-        self.mask_token = nn.Parameter(torch.zeros(1, 1, config['embed_dim']))
+        self.mask_token = nn.Parameter(torch.zeros(1, 1, config['embed_dim'])) 
         nn.init.trunc_normal_(self.mask_token, std=0.02)
       
         # Loss weighting factors
@@ -137,8 +142,8 @@ class CrossModalVideoMAE(nn.Module):
         Parameters:
             - rgb_frames: Tensor of shape [B, 3, T, H, W]
             - depth_maps: Tensor of shape [B, 1, T, H, W]
-            - rgb_masks: Boolean Tensor of shape [B, N], where N is the number of patches for RGB frames.
-            - depth_masks: Boolean Tensor of shape [B, N], where N is the number of patches for depth maps.
+            - rgb_masks: Boolean Tensor of shape [B, N], where N is the number of TUBELETS for RGB frames.
+            - depth_masks: Boolean Tensor of shape [B, N], where N is the number of TUBELETS for depth maps.
 
         Returns:
             - rgb_reconstruction: Reconstructed RGB patches.
@@ -158,7 +163,7 @@ class CrossModalVideoMAE(nn.Module):
         depth_embed = self.depth_tubelet_embed(depth_maps)  # Shape: [B, N, embed_dim]
 
         # Ensure that rgb_masks and depth_masks have the correct shape
-        N = rgb_embed.size(1)  # Total patches across all frames (for both RGB and depth)
+        N = rgb_embed.size(1)  # Total NUMBER OF TUBELETS across all frames (for both RGB and depth)
         assert rgb_masks.shape == (B, N), "RGB mask tensor must have shape [B, N]"
         assert depth_masks.shape == (B, N), "Depth mask tensor must have shape [B, N]"
 
@@ -185,7 +190,7 @@ class CrossModalVideoMAE(nn.Module):
 
         # Prepare the sequence for decoders
         # RGB Decoder
-        rgb_decoder_embeddings = self.encoder_to_decoder(rgb_embeddings) if self.embed_dim != self.decoder_embed_dim else rgb_embeddings
+        rgb_decoder_embeddings = self.encoder_to_decoder(rgb_embeddings) if self.embed_dim != self.decoder_embed_dim else rgb_embeddings #CHECK THIS LINE, ENCODER_TO_DECODER FUNCTION MIGHT BE LACKING AN ARGUMENT
         for block in self.rgb_decoder:
             rgb_decoder_embeddings = block(rgb_decoder_embeddings)
 
@@ -193,21 +198,25 @@ class CrossModalVideoMAE(nn.Module):
         rgb_reconstruction = self.rgb_head(rgb_decoder_embeddings)  # Shape: [B, N, 3 * num_patches]
 
         # Depth Decoder
-        depth_decoder_embeddings = self.encoder_to_decoder(depth_embeddings) if self.embed_dim != self.decoder_embed_dim else depth_embeddings
+        depth_decoder_embeddings = self.encoder_to_decoder(depth_embeddings) if self.embed_dim != self.decoder_embed_dim else depth_embeddings #CHECK THIS LINE, ENCODER_TO_DECODER FUNCTION MIGHT BE LACKING AN ARGUMENT
         for block in self.depth_decoder:
             depth_decoder_embeddings = block(depth_decoder_embeddings)
 
         depth_decoder_embeddings = self.depth_decoder_norm(depth_decoder_embeddings)
         depth_reconstruction = self.depth_head(depth_decoder_embeddings)  # Shape: [B, N, 1 * num_patches]
 
-        # Get the number of patches per frame
-        num_patches_per_frame = 14 * 14  # TODO hardcoded for now
+        # Get the number of patches per frame by dividing the image size by the patch size
+        num_patches_per_frame = (H // config['patch_size']) * (W // config['patch_size']) # 14 * 14 = 196 for 224x224 images and 16x16 patches
+    
 
         # Reshape RGB reconstruction to the desired shape
         rgb_reconstruction = rgb_reconstruction.view(B, T, num_patches_per_frame, -1)  # Last dim will be 768
 
         # Reshape Depth reconstruction to the desired shape
         depth_reconstruction = depth_reconstruction.view(B, T, num_patches_per_frame, -1)  # Last dim will be 256
+
+        logger.info(f"RGB Reconstruction Shape: {rgb_reconstruction.shape}")
+        logger.info(f"Depth Reconstruction Shape: {depth_reconstruction.shape}")
 
         return rgb_reconstruction, depth_reconstruction
 
