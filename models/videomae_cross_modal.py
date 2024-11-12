@@ -95,10 +95,7 @@ class CrossModalVideoMAE(nn.Module):
         self.rgb_decoder_norm = nn.LayerNorm(config['embed_dim'], eps=1e-6)
         #Output layer for RGB frames to a shape of (patch_size, patch_size, 3)
         self.rgb_head = nn.Linear(config['embed_dim'], config['tubelet_size']*config['patch_size'] ** 2 * 3) #CHECK THIS LINE'S OUTPUT DIMENSION (SUSPECTED TO BE PATCH_SIZE ** 2 * NUM_PATCHES**2 * 3)
-        # Count number of patches
-        #num_patches = (config['img_size'] // config['patch_size']) ** 2
-        #self.rgb_head = nn.Linear(config['embed_dim'], config['patch_size'] ** 2 * num_patches * 3)
-        
+
         
         #Depth decoder: a lightweight transformer decoder that takes the Depth encoder output and reconstructs the Depth frames
         self.depth_decoder = nn.ModuleList([
