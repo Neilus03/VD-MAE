@@ -135,6 +135,9 @@ class CrossModalVideoMAE(nn.Module):
         self.embed_dim = config['embed_dim']
         self.decoder_embed_dim = config['decoder_embed_dim']
         
+        # Function to project encoder output to decoder input
+        self.encoder_to_decoder = nn.Linear(self.embed_dim, self.decoder_embed_dim)
+        
     def forward(self, rgb_frames, depth_maps, rgb_masks, depth_masks):
         '''
         Forward pass of the CrossModalVideoMAE model.
@@ -190,7 +193,7 @@ class CrossModalVideoMAE(nn.Module):
 
         # Prepare the sequence for decoders
         # RGB Decoder
-        rgb_decoder_embeddings = self.encoder_to_decoder(rgb_embeddings) if self.embed_dim != self.decoder_embed_dim else rgb_embeddings #CHECK THIS LINE, ENCODER_TO_DECODER FUNCTION MIGHT BE LACKING AN ARGUMENT
+        rgb_decoder_embeddings = self.encoder_to_decoder(self.embed_dim, self.decoder_embed_dim) if self.embed_dim != self.decoder_embed_dim else rgb_embeddings 
         for block in self.rgb_decoder:
             rgb_decoder_embeddings = block(rgb_decoder_embeddings)
 
@@ -198,7 +201,7 @@ class CrossModalVideoMAE(nn.Module):
         rgb_reconstruction = self.rgb_head(rgb_decoder_embeddings)  # Shape: [B, N, 3 * num_patches]
 
         # Depth Decoder
-        depth_decoder_embeddings = self.encoder_to_decoder(depth_embeddings) if self.embed_dim != self.decoder_embed_dim else depth_embeddings #CHECK THIS LINE, ENCODER_TO_DECODER FUNCTION MIGHT BE LACKING AN ARGUMENT
+        depth_decoder_embeddings = self.encoder_to_decoder(self.embed_dim, self.decoder_embed_dim) if self.embed_dim != self.decoder_embed_dim else depth_embeddings 
         for block in self.depth_decoder:
             depth_decoder_embeddings = block(depth_decoder_embeddings)
 
