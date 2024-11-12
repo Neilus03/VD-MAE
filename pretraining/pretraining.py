@@ -105,7 +105,12 @@ def main():
     video_folder = data_config['finevideo_path'] if os.path.exists(data_config['finevideo_path']) else '/home/ndelafuente/VD-MAE/sports_videos'
 
     #single video path if we want to overfit to check if the model is learning
+<<<<<<< HEAD
     single_video_path = '/data/datasets/finevideo/sports_videos/circle_animation.mp4'
+=======
+    #single_video_path = '/data/datasets/finevideo/sports_videos/sample_93.mp4'
+    single_video_path = 'data/datasets/finevideo/sports_videos/sample_93_trimmed.mp4'
+>>>>>>> 2d5e1fbbbd05eaa524c7e4e0c9bc3a2b7a97d5b9
 
     dataset = VideoFrameDataset(
             video_folder = video_folder,
