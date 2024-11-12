@@ -24,7 +24,7 @@ class TubeletEmbed(nn.Module):
             in_channels=in_chans,
             out_channels=embed_dim,
             kernel_size=(tubelet_size, patch_size[0], patch_size[1]),
-            stride=(tubelet_size, patch_size[0], patch_size[1])
+            stride=(tubelet_size, patch_size[0], patch_size[1]) # Stride = kernel size, ensures that the convolutional kernels do not overlap and that the tubelets are extracted without redundancy.
         )
 
     def forward(self, x):
@@ -47,4 +47,4 @@ if __name__ == "__main__":
     x = torch.randn(1, 3, 16, 224, 224)
     out = model(x)
     print(out.shape)
-# Output: torch.Size([1, 3136, 768])
+# Output: torch.Size([1, 784, 768])
