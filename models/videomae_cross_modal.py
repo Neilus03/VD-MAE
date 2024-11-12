@@ -116,7 +116,7 @@ class CrossModalVideoMAE(nn.Module):
         self.depth_decoder_norm = nn.LayerNorm(config['decoder_embed_dim'], eps=1e-6)
         #Output layer for Depth frames to a shape of (patch_size, patch_size, 1) 
         self.depth_head = nn.Linear(config['decoder_embed_dim'], config['tubelet_size']*config['patch_size']**2 * 1) #CHECK THIS LINE'S OUTPUT DIMENSION (SUSPECTED TO BE PATCH_SIZE ** 2 * NUM_PATCHES**2 * 1)
-        #self.depth_head = nn.Linear(config['decoder_embed_dim'], config['patch_size'] ** 2 * num_patches * 1)
+
 
         #Initialize the mask token
         self.mask_token = nn.Parameter(torch.zeros(1, 1, config['embed_dim']))
