@@ -329,6 +329,42 @@ if __name__ == '__main__':
     import random
     import matplotlib.pyplot as plt
 
+    # Import the Depth Anything  V2 model from the specified module.
+    from depth_anything_v2.dpt import DepthAnythingV2
+
+    # Load configuration settings from a YAML file (assuming you have a 'config.yaml' file).
+    import yaml
+    with open('../config/config.yaml', 'r') as f:
+        config = yaml.safe_load(f)
+
+    # Configure the device to be used for computation.
+    # Use GPU ('cuda') if available; otherwise, fall back to CPU ('cpu').
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
+
+    # Define model configurations for the Depth Anything V2 model.
+    # The 'vitl' configuration specifies the model architecture and parameters.
+    model_configs = {
+        'vitl': {
+            'encoder': 'vitl',               # Use the 'vitl' encoder architecture.
+            'features': 256,                 # Number of feature maps.
+            'out_channels': [256, 512, 1024, 1024]  # Output channels at different layers.
+        }
+    }
+
+    # Initialize the Depth Anything V2 model with the specified configuration.
+    depth_model = DepthAnythingV2(**model_configs['vitl'])
+
+    # Suppress future warnings during model loading.
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", category=FutureWarning)
+        # Load the pre-trained model weights from the checkpoint specified in the configuration.
+        depth_model.load_state_dict(torch.load(config['data']['depth_model_checkpoint'], map_location=device))
+
+    # Move the model to the configured device (GPU or CPU) and set it to evaluation mode.
+    depth_model = depth_model.to(device).eval()
+
+        
     # Set the random seed for reproducibility.
     random.seed(24)
     torch.manual_seed(24)
@@ -341,20 +377,22 @@ if __name__ == '__main__':
     ])
 
     # Define the number of frames to sample per sequence.
-    NUM_FRAMES = 32  # T = 32
+    NUM_FRAMES = 16  # T = 32
 
     # Define the frame interval (e.g., take every nth frame).
-    FRAME_INTERVAL = 4  # Take one frame every 4 frames.
+    FRAME_INTERVAL = 1  # Take one frame every 4 frames.
 
     # Specify the path to the folder containing video files.
     video_folder = config['data']['finevideo_path'] + '/sports_videos'
 
     # Check if the specified video folder exists.
     if not os.path.exists(video_folder):
-        video_folder = '/home/ndelafuente/VD-MAE/sports_videos'
+        video_folder = '/data/datasets/finevideo/sports_videos'
+        single_video_path = '/data/datasets/finevideo/sports_videos/circle_animation.mp4'
         if not os.path.exists(video_folder):
             # If the folder does not exist, raise a FileNotFoundError.
             raise FileNotFoundError(f"The specified video folder does not exist: {video_folder}")
+
 
     # Create an instance of the VideoFrameDataset with the given parameters.
     dataset = VideoFrameDataset(
@@ -362,7 +400,8 @@ if __name__ == '__main__':
         transform=transform,             # Transformation to apply to each frame.
         depth_model=depth_model,         # Depth estimation model.
         num_frames=NUM_FRAMES,           # Number of frames per sequence.
-        frame_interval=FRAME_INTERVAL    # Frame interval for sampling.
+        frame_interval=FRAME_INTERVAL,    # Frame interval for sampling.,
+        single_video_path=single_video_path
     )
 
     # Print dataset statistics to provide insight into the dataset composition.
@@ -377,7 +416,7 @@ if __name__ == '__main__':
         dataset,                         # The dataset from which to load data.
         batch_size=batch_size,           # Number of sequences per batch.
         shuffle=True,                    # Shuffle the data at every epoch.
-        num_workers=4,                   # Number of subprocesses to use for data loading.
+        num_workers=0,                   # Number of subprocesses to use for data loading.
     )
 
     # Iterate over the DataLoader to process batches of data.
