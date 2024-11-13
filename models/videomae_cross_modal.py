@@ -295,6 +295,6 @@ if __name__ == "__main__":
     logger.info(f"RGB Reconstruction Shape: {rgb_reconstruction.shape}")      # Expected: [B, T, num_patches_per_frame, embed_dim]
     logger.info(f"Depth Reconstruction Shape: {depth_reconstruction.shape}")  # Expected: [B, T, num_patches_per_frame, embed_dim]
 
-
+ 
 
     logger.info("All assessments passed successfully.")
