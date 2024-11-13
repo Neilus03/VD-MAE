@@ -135,8 +135,8 @@ class CrossModalVideoMAE(nn.Module):
         self.embed_dim = config['embed_dim']
         self.decoder_embed_dim = config['decoder_embed_dim']
         
-        # Function to project encoder output to decoder input
-        self.encoder_to_decoder = nn.Linear(self.embed_dim, self.decoder_embed_dim)
+        # Function to project encoder output to decoder input over the last dimension
+        self.encoder_to_decoder = nn.Linear(self.embed_dim, self.decoder_embed_dim) # [B, N, embed_dim] -> [B, N, decoder_embed_dim]
         
     def forward(self, rgb_frames, depth_maps, rgb_masks, depth_masks):
         '''
