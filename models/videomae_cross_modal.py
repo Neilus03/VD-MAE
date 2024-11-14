@@ -294,8 +294,6 @@ def animate_masks(mask_tensor, title, filename):
 
 
 
-
-
 #################################################
 #     Test the model with dummy input data      #       
 #################################################
@@ -320,7 +318,7 @@ if __name__ == "__main__":
 
     # Add training parameters to config
     config['mask_ratio'] = training_config.get('mask_ratio', 0.25)
-    config['alpha'] = training_config.get('alpha', 1.0)
+    config['alpha'] = training_config.get('alpha', 1.0) 
     config['beta'] = training_config.get('beta', 1.0)
 
     # Instantiate the model
