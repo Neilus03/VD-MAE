@@ -62,9 +62,9 @@ def main():
     model = DDP(model, device_ids=[local_rank], output_device=local_rank)  # Wrap model for DDP
     
     if isinstance(model, torch.nn.parallel.DistributedDataParallel):
-        net = model.module
+        model = model.module
     else:
-        net = model
+        model = model
     
     # Compile the model with torch for faster performance
     #model = torch.compile(model)
@@ -105,12 +105,7 @@ def main():
     video_folder = data_config['finevideo_path'] if os.path.exists(data_config['finevideo_path']) else '/home/ndelafuente/VD-MAE/sports_videos'
 
     #single video path if we want to overfit to check if the model is learning
-<<<<<<< HEAD
     single_video_path = '/data/datasets/finevideo/sports_videos/circle_animation.mp4'
-=======
-    #single_video_path = '/data/datasets/finevideo/sports_videos/sample_93.mp4'
-    single_video_path = 'data/datasets/finevideo/sports_videos/sample_93_trimmed.mp4'
->>>>>>> 2d5e1fbbbd05eaa524c7e4e0c9bc3a2b7a97d5b9
 
     dataset = VideoFrameDataset(
             video_folder = video_folder,
@@ -234,7 +229,7 @@ def main():
             #Forward pass
             with torch.amp.autocast('cuda'):
                 #Get the reconstructions for the frames and depth maps
-                rgb_recon, depth_recon = model(frames, depth_maps, rgb_masks_forward, depth_masks_forward)
+                rgb_recon, depth_recon = model(rgb_masks_forward, depth_masks_forward)
                 #Calculate the losses
                 rgb_loss, depth_loss, loss = model.module.compute_loss(frames, depth_maps, rgb_recon, depth_recon, rgb_masks_loss, depth_masks_loss)
                 
