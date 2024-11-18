@@ -186,10 +186,6 @@ class CrossModalVideoMAE(nn.Module):
         self.rgb_masks = rgb_masks
         self.depth_masks = depth_masks
 
-        # For visualization, store the masks
-        self.rgb_masks = rgb_masks
-        self.depth_masks = depth_masks
-
         # Apply masking to RGB embeddings
         mask_tokens_rgb = self.mask_token.expand(B, N, -1)  # Shape: [B, N, embed_dim]
         rgb_embeddings = torch.where(rgb_masks.unsqueeze(-1), mask_tokens_rgb, rgb_embed)  # Shape: [B, N, embed_dim]
@@ -202,6 +198,11 @@ class CrossModalVideoMAE(nn.Module):
         rgb_embeddings += self.pos_embed
         depth_embeddings += self.pos_embed
 
+        ''''REVISAR'''
+        #only_visible_rgb_embeddings = rgb_embed[~rgb_masks.unsqueeze(-1)].view(B, -1, self.embed_dim)
+        #only_visible_depth_embeddings = depth_embed[~depth_masks.unsqueeze(-1)].view(B, -1, self.embed_dim)
+        '''REVISAR'''
+        
         # Encode RGB and Depth separately
         for block in self.encoder:
             rgb_embeddings = block(rgb_embeddings)
@@ -210,10 +211,16 @@ class CrossModalVideoMAE(nn.Module):
         # Normalize encoder outputs
         rgb_embeddings = self.encoder_norm(rgb_embeddings)
         depth_embeddings = self.encoder_norm(depth_embeddings)
-
+        
+        '''NOW ADD THE MASKED TOKENS TO THEIR RESPECTIVE POSITION'''
+        '''REVISAR'''
+        #rgb_decoder_input = torch.cat((mask_tokens_rgb, rgb_embeddings), dim=1)  # Shape: [B, N+1, embed_dim]
+        #depth_decoder_input = torch.cat((mask_tokens_depth, depth_embeddings), dim=1)  # Shape: [B, N+1, embed_dim]
+        '''REVISAR'''
+        
         # Prepare the sequence for decoders
         # RGB Decoder
-        rgb_decoder_embeddings = self.encoder_to_decoder(rgb_embeddings) if self.embed_dim != self.decoder_embed_dim else rgb_embeddings 
+        rgb_decoder_embeddings = self.encoder_to_decoder(rgb_embeddings) if self.embed_dim != self.decoder_embed_dim else rgb_embeddings  #REVISAR
         for block in self.rgb_decoder:
             rgb_decoder_embeddings = block(rgb_decoder_embeddings)
 
@@ -331,7 +338,7 @@ if __name__ == "__main__":
     logger.info(f"Model moved to device: {device}")
 
     # Create dummy input data
-    B = 1  # Batch size (set to 1 for visualization purposes)
+    B = 4  # Batch size (set to 1 for visualization purposes)
     C_rgb = 3
     C_depth = 1
     T = config['num_frames']
