@@ -18,6 +18,7 @@ import torch.multiprocessing as mp
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '../utils'))
 from tubeletembed import TubeletEmbed
+from loss import compute_loss
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '../models'))
 from videomae_cross_modal import CrossModalVideoMAE
@@ -183,7 +184,7 @@ def main():
             assert batch_size == frames.size(0) == depth_maps.size(0), "Batch size mismatch"
 
             # Get number of tubelets
-            num_tubelets = model.module.rgb_tubelet_embed.num_tubelets
+            num_tubelets = model.rgb_tubelet_embed.num_tubelets
 
             ### -----------------------------------------------------------------------------------
 
@@ -231,7 +232,7 @@ def main():
                 #Get the reconstructions for the frames and depth maps
                 rgb_recon, depth_recon = model(rgb_masks_forward, depth_masks_forward)
                 #Calculate the losses
-                rgb_loss, depth_loss, loss = model.module.compute_loss(frames, depth_maps, rgb_recon, depth_recon, rgb_masks_loss, depth_masks_loss)
+                rgb_loss, depth_loss, loss = compute_loss(frames, depth_maps, rgb_recon, depth_recon, rgb_masks_loss, depth_masks_loss)
                 
             print(f"Loss: {loss}, Type: {type(loss)}")
             print(f"Loss device: {loss.device}")
