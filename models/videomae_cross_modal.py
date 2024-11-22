@@ -338,7 +338,7 @@ if __name__ == "__main__":
     logger.info(f"Model moved to device: {device}")
 
     # Create dummy input data
-    B = 4  # Batch size (set to 1 for visualization purposes)
+    B = 2  # Batch size (set to 1 for visualization purposes)
     C_rgb = 3
     C_depth = 1
     T = config['num_frames']
