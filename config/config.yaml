@@ -1,8 +1,8 @@
 model:
   img_size: 224            # Image size
   patch_size: 16           # Patch size
-  num_frames: 32           # Number of frames
-  tubelet_size: 1          # Tubelet size
+  num_frames: 16           # Number of frames
+  tubelet_size: 4          # Tubelet size
   embed_dim: 768           # Embedding dimension for both encoder and embeddings
   frame_interval: 1        # Frame interval for the tubelets
 
@@ -16,13 +16,13 @@ model:
   decoder_mlp_ratio: 4     # MLP ratio in the decoders
 
 training:
-  batch_size: 1
+  batch_size: 4
   num_epochs: 500
   lr: 0.00003
   weight_decay: 0.0001
   model_checkpoint_path: ../checkpoints
   num_workers: 0
-  mask_ratio: 0.25         # Mask ratio for training
+  mask_ratio: 0.95         # Mask ratio for training
   alpha: 1.0               # Weight for RGB loss
   beta: 1.0                # Weight for Depth loss 
 
@@ -34,8 +34,8 @@ data:
     std: 0.5
 
 wandb: 
-  # entity: Neilus03
-  entity: cvc-mireia
+  entity: Neilus03
+  #entity: cvc-mireia
   project: VD-MAE
   name: pretraining
   log_interval: 1
