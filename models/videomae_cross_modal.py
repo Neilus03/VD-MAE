@@ -3,6 +3,8 @@
 import torch
 import torch.nn as nn
 from timm.models.vision_transformer import Block
+from timm.layers import *
+
 from functools import partial
 import os
 import sys

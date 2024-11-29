@@ -156,6 +156,8 @@ def main():
     #set the best loss to infinity
     best_loss = float('inf')
     
+
+
     for epoch in range(num_epochs):
         # Set the model to train mode
         model.train()
@@ -201,6 +203,26 @@ def main():
             if T % tubelet_size != 0:
                 raise ValueError(f"Tubelet size {tubelet_size} does not evenly divide number of frames {T}.")
 
+            # Create separate random masks for RGB and Depth
+            rgb_masks_forward = torch.rand(B, num_tubelets * num_patches_per_frame, device=frames.device) < mask_ratio
+            depth_masks_forward = torch.rand(B, num_tubelets * num_patches_per_frame, device=frames.device) < mask_ratio
+
+            # Reshape the masks to match the tubelet structure
+            rgb_masks_reshaped = rgb_masks_forward.view(B, num_tubelets, num_patches_per_frame)  # Shape: [B, num_tubelets, num_patches_per_frame]
+            depth_masks_reshaped = depth_masks_forward.view(B, num_tubelets, num_patches_per_frame)  # Shape: [B, num_tubelets, num_patches_per_frame]
+
+            # Group patches by tubelets and expand to match tubelet structure
+            rgb_masks_loss = rgb_masks_reshaped.unsqueeze(1).expand(-1, tubelet_size, -1, -1)  # Shape: [B, tubelet_size, num_tubelets, num_patches_per_frame]
+            depth_masks_loss = depth_masks_reshaped.unsqueeze(1).expand(-1, tubelet_size, -1, -1)  # Shape: [B, tubelet_size, num_tubelets, num_patches_per_frame]
+
+            # Reshape masks_loss to final desired shape
+            rgb_masks = rgb_masks_loss.permute(0, 2, 1, 3).contiguous().view(B, T, num_patches_per_frame)  # Shape: [B, T, num_patches_per_frame]
+            depth_masks = depth_masks_loss.permute(0, 2, 1, 3).contiguous().view(B, T, num_patches_per_frame)  # Shape: [B, T, num_patches_per_frame]
+
+            # rgb_masks and depth_masks are now ready to be passed to the forward method
+
+            ### -----------------------------------------------------------------------------------
+            
             accumulation_steps = 4  # Accumulate gradients for 4 steps
             #Zero the gradients
             optimizer.zero_grad()
@@ -208,13 +230,9 @@ def main():
             #Forward pass
             with torch.amp.autocast('cuda'):
                 #Get the reconstructions for the frames and depth maps
-                rgb_recon, depth_recon = model(frames, depth_maps)
-
-                rgb_masks_loss = model.rgb_masks
-                depth_masks_loss = model.depth_masks
-
+                rgb_recon, depth_recon = model(rgb_masks_forward, depth_masks_forward)
                 #Calculate the losses
-                rgb_loss, depth_loss, loss = compute_loss(frames, depth_maps, rgb_recon, depth_recon, rgb_masks_loss, depth_masks_loss, epoch)
+                rgb_loss, depth_loss, loss = compute_loss(frames, depth_maps, rgb_recon, depth_recon, rgb_masks_loss, depth_masks_loss)
                 
             print(f"Loss: {loss}, Type: {type(loss)}")
             print(f"Loss device: {loss.device}")
