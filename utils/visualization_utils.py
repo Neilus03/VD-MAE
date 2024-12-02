@@ -376,10 +376,10 @@ def new_log_visualizations(rgb_frames, depth_maps, reconstructed_image, reconstr
     img_size = config['model']['img_size']
     patch_size = config['model']['patch_size']
     
-    print(f"1-Original RGB frames shape: {rgb_frames.shape}")
-    print(f"1-Original Depth maps shape: {depth_maps.shape}")
-    print(f"1-RGB masks shape: {rgb_masks.shape}")
-    print(f"1-Depth masks shape: {depth_masks.shape}")
+    # print(f"1-Original RGB frames shape: {rgb_frames.shape}")
+    # print(f"1-Original Depth maps shape: {depth_maps.shape}")
+    # print(f"1-RGB masks shape: {rgb_masks.shape}")
+    # print(f"1-Depth masks shape: {depth_masks.shape}")
     
     # Select the first sample in the batch
     original_image = rgb_frames[0].detach().cpu()  # Shape: (3, T, H, W)
@@ -387,10 +387,10 @@ def new_log_visualizations(rgb_frames, depth_maps, reconstructed_image, reconstr
     rgb_mask = rgb_masks[0].detach().cpu()         # Shape: (3, T, H, W)
     depth_mask = depth_masks[0].detach().cpu()     # Shape: (1, T, H, W)
     
-    print(f"2-First image in batch shape: {original_image.shape}")
-    print(f"2-First depth map in batch shape: {original_depth.shape}")
-    print(f"2-First RGB mask shape: {rgb_mask.shape}")
-    print(f"2-First Depth mask shape: {depth_mask.shape}")
+    # print(f"2-First image in batch shape: {original_image.shape}")
+    # print(f"2-First depth map in batch shape: {original_depth.shape}")
+    # print(f"2-First RGB mask shape: {rgb_mask.shape}")
+    # print(f"2-First Depth mask shape: {depth_mask.shape}")
     
     # Select the first frame in the sequence
     original_image = original_image[:, 0]  # Shape: (3, H, W)
@@ -398,17 +398,17 @@ def new_log_visualizations(rgb_frames, depth_maps, reconstructed_image, reconstr
     rgb_mask = rgb_mask[:, 0]              # Shape: (3, H, W)
     depth_mask = depth_mask[:, 0]          # Shape: (1, H, W)
     
-    print(f"3-Original RGB image shape: {original_image.shape}")
-    print(f"3-Original Depth map shape: {original_depth.shape}")
-    print(f"3-RGB mask shape: {rgb_mask.shape}")
-    print(f"3-Depth mask shape: {depth_mask.shape}")
+    # print(f"3-Original RGB image shape: {original_image.shape}")
+    # print(f"3-Original Depth map shape: {original_depth.shape}")
+    # print(f"3-RGB mask shape: {rgb_mask.shape}")
+    # print(f"3-Depth mask shape: {depth_mask.shape}")
     
     # Same for reconstructed image
     reconstructed_image = reconstructed_image[0].detach().cpu()[:, 0]  # Shape: (3, H, W)
     reconstructed_depth = reconstructed_depth[0].detach().cpu()[0, 0]  # Shape: (H, W)
     
-    print(f"4-Reconstructed RGB image shape: {reconstructed_image.shape}")
-    print(f"4-Reconstructed Depth map shape: {reconstructed_depth.shape}")
+    # print(f"4-Reconstructed RGB image shape: {reconstructed_image.shape}")
+    # print(f"4-Reconstructed Depth map shape: {reconstructed_depth.shape}")
     
     # Denormalize and normalize original RGB image
     original_rgb_image = original_image  # Shape: (3, H, W)
@@ -438,8 +438,8 @@ def new_log_visualizations(rgb_frames, depth_maps, reconstructed_image, reconstr
     assembled_original_rgb = assemble_patches_with_gaps(original_patches_rgb_denorm, gap_size, num_patches_per_row, patch_size, num_channels=3)
     assembled_original_depth = assemble_patches_with_gaps(original_patches_depth_viz, gap_size, num_patches_per_row, patch_size, depth=True)
     
-    print(f"6-Assembled original RGB image shape: {assembled_original_rgb.shape}")
-    print(f"6-Assembled original Depth map shape: {assembled_original_depth.shape}")
+    # print(f"6-Assembled original RGB image shape: {assembled_original_rgb.shape}")
+    # print(f"6-Assembled original Depth map shape: {assembled_original_depth.shape}")
     
     # Visualize masks
     rgb_mask_viz = rgb_mask.permute(1, 2, 0).numpy()  # Shape: (H, W, 3)
