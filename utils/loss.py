@@ -68,28 +68,28 @@ def reshape_masks(
     print("Initial masks shape:", masks.shape)
 
     # Reshape N into [B, T, num_patches_per_frame]
-    masks = masks.view(batch_size, num_patches_per_frame, num_tubelets)  # Shape [B, num_patches_per_frame, num_tubelets]
+    masks = masks.view(batch_size, num_tubelets, num_patches_per_frame)  # Shape [B, num_tubelets, num_patches_per_frame]
     print("After reshaping to frame patches:", masks.shape)
 
     # Repeat along the tubelet size dimension
-    masks = masks.unsqueeze(2).repeat(1, 1, tubelet_size, 1)  # Shape [B, num_patches_per_frame, tubelet_size, num_tubelets]
+    masks = masks.unsqueeze(1).repeat(1, 1, tubelet_size, 1)  # Shape [B, num_tubelets, tubelet_size, num_patches_per_frame]
     #masks = masks.view(batch_size, time * tubelet_size, num_patches_per_frame)
     print("After repeating along tubelet size:", masks.shape)
 
     # Repeat along the channel dimension
     if channels > 1:
-        masks = masks.unsqueeze(1).repeat(1, channels, 1, 1, 1)  # Shape [B, 3, num_patches_per_frame, tubelet_size, num_tubelets]
+        masks = masks.unsqueeze(1).repeat(1, channels, 1, 1, 1)  # Shape [B, 3, num_tubelets, tubelet_size, num_patches_per_frame]
     else:
-        masks = masks.unsqueeze(1)  # Shape [B, 1, num_patches_per_frame, tubelet_size, num_tubelets]
+        masks = masks.unsqueeze(1)  # Shape [B, 1, num_tubelets, tubelet_size, num_patches_per_frame]
     print("After repeating along channels:", masks.shape)
 
     # Reshape the patches into 2D grids
-    masks = masks.view(batch_size, channels, time, num_patches_in_H, num_patches_in_W)
+    masks = masks.view(batch_size, channels, time, num_patches_in_H, num_patches_in_W)  # Shape [B, C, T, H_patches, W_patches]
     print("After reshaping to patch grids:", masks.shape)
 
     # Restructure patch-wise masks into pixel-wise masks
-    masks = masks.repeat_interleave(num_pixels_in_patch_H, dim=3)
-    masks = masks.repeat_interleave(num_pixels_in_patch_W, dim=4)
+    masks = masks.repeat_interleave(num_pixels_in_patch_H, dim=3)  # Shape [B, C, T, H, W]
+    masks = masks.repeat_interleave(num_pixels_in_patch_W, dim=4)  # Shape [B, C, T, H, W]
     print("After converting to pixel-wise masks:", masks.shape)
 
     return masks
