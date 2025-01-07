@@ -225,7 +225,7 @@ class VideoFrameDataset(Dataset):
 
         # Stack frames and patches along the TIME dimension.
         frames = torch.stack(frames_list, dim=1)  # Shape: (3, TIME, H, W)
-        depth_maps = torch.stack(depth_maps_list, dim=0)  # Shape: (TIME, 1, H, W)
+        depth_maps = torch.stack(depth_maps_list, dim=1)  # Shape: (1, TIME, H, W)
         frame_patches = torch.stack(frame_patches_list, dim=0)  # Shape: (TIME, NUM_PATCHES, 3, PATCH_SIZE, PATCH_SIZE)
         depth_patches = torch.stack(depth_patches_list, dim=0)  # Shape: (TIME, NUM_PATCHES, 1, PATCH_SIZE, PATCH_SIZE)
 

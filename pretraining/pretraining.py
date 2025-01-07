@@ -106,7 +106,7 @@ def main():
     video_folder = data_config['finevideo_path'] if os.path.exists(data_config['finevideo_path']) else '/home/ndelafuente/VD-MAE/sports_videos'
 
     #single video path if we want to overfit to check if the model is learning
-    single_video_path = '/data/datasets/finevideo/sports_videos/circle_animation.mp4'
+    single_video_path = '/data/datasets/finevideo/sports_videos/grid_animation.mp4'
 
     dataset = VideoFrameDataset(
             video_folder = video_folder,
@@ -172,8 +172,7 @@ def main():
         #Iterate over the dataloader
         for batch_idx, batch in progress_bar:
             frames, _, depth_maps, _, _ = batch
-            depth_maps = depth_maps.permute(0, 2, 1, 3, 4)  # TODO change this in the dataloader
-            #Send data to device
+            # Send data to device
             frames = frames.to(device)
             depth_maps = depth_maps.to(device)
             
@@ -187,7 +186,7 @@ def main():
             ### -----------------------------------------------------------------------------------
 
             # Get patch and tubelet size
-            patch_size = model_config['patch_size']  # Assume this is defined properly
+            patch_size = model_config['patch_size']
             tubelet_size = model_config['tubelet_size']
 
             B, C, T, H, W = frames.shape  # Original frames shape
@@ -202,10 +201,10 @@ def main():
                 raise ValueError(f"Tubelet size {tubelet_size} does not evenly divide number of frames {T}.")
 
             accumulation_steps = 4  # Accumulate gradients for 4 steps
-            #Zero the gradients
+            # Zero the gradients
             optimizer.zero_grad()
             
-            #Forward pass
+            # Forward pass
             with torch.amp.autocast('cuda'):
                 #Get the reconstructions for the frames and depth maps
                 rgb_recon, depth_recon = model(frames, depth_maps)
@@ -220,17 +219,17 @@ def main():
             print(f"Loss device: {loss.device}")
             print(f"Model outputs: rgb_recon device: {rgb_recon.device}, depth_recon device: {depth_recon.device}")
 
-            #Backward pass
+            # Backward pass
             scaler.scale(loss).backward()
             scaler.step(optimizer)
             scaler.update()
             
-            #Update the total losses
+            # Update the total losses
             total_loss += loss.item()
             total_rgb_loss += rgb_loss.item()
             total_depth_loss += depth_loss.item()
             
-            #Log metrics to wandb every N batches
+            # Log metrics to wandb every N batches
             if rank == 0 and batch_idx % wandb_config['log_interval'] == 0:
                 wandb.log({
                     'batch_loss': total_loss / (batch_idx + 1),
@@ -238,15 +237,15 @@ def main():
                     'batch_depth_loss': total_depth_loss / (batch_idx + 1)
                 })
                 
-        #Step the scheduler
+        # Step the scheduler
         scheduler.step()
         
-        #Average the total losses
+        # Average the total losses
         avg_loss = total_loss / len(dataloader)
         avg_rgb_loss = total_rgb_loss / len(dataloader)
         avg_depth_loss = total_depth_loss / len(dataloader)
         if rank == 0:
-            #Log epoch metrics to wandb and console
+            # Log epoch metrics to wandb and console
             wandb.log({
                 'epoch': epoch + 1,
                 'loss': avg_loss,
@@ -254,7 +253,7 @@ def main():
                 'depth_loss': avg_depth_loss
             })
             
-            #Save the model checkpoint if the loss is the best so far
+            # Save the model checkpoint if the loss is the best so far
             if avg_loss < best_loss:
                 best_loss = avg_loss
                 torch.save({
