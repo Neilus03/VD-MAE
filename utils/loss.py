@@ -68,39 +68,29 @@ def reshape_masks(
     print("Initial masks shape:", masks.shape)
 
     # Reshape N into [B, T, num_patches_per_frame]
-    masks = masks.view(batch_size, num_patches_per_frame, num_tubelets)
+    masks = masks.view(batch_size, num_patches_per_frame, num_tubelets)  # Shape [B, num_patches_per_frame, num_tubelets]
     print("After reshaping to frame patches:", masks.shape)
 
-    # Step 2: Repeat along the tubelet size dimension
-    masks = masks.unsqueeze(2).repeat(1, 1, tubelet_size, 1)
+    # Repeat along the tubelet size dimension
+    masks = masks.unsqueeze(2).repeat(1, 1, tubelet_size, 1)  # Shape [B, num_patches_per_frame, tubelet_size, num_tubelets]
     #masks = masks.view(batch_size, time * tubelet_size, num_patches_per_frame)
     print("After repeating along tubelet size:", masks.shape)
 
-    # Step 3: Repeat along the channel dimension
+    # Repeat along the channel dimension
     if channels > 1:
-        masks = masks.unsqueeze(1).repeat(1, channels, 1, 1, 1)
+        masks = masks.unsqueeze(1).repeat(1, channels, 1, 1, 1)  # Shape [B, 3, num_patches_per_frame, tubelet_size, num_tubelets]
     else:
-        masks = masks.unsqueeze(1)
+        masks = masks.unsqueeze(1)  # Shape [B, 1, num_patches_per_frame, tubelet_size, num_tubelets]
     print("After repeating along channels:", masks.shape)
 
-    # Step 4: Reshape the patches into 2D grids
-    # TODO canviar els reshapes d'aquí 
-    # Reshape to (B, C, n_patches_per_frame, time)
-    masks = masks.view(batch_size, channels, num_patches_in_H, num_patches_in_W, time)
-    #masks = masks.view(batch_size, channels, time * tubelet_size, num_patches_in_H, num_patches_in_W)
+    # Reshape the patches into 2D grids
+    masks = masks.view(batch_size, channels, time, num_patches_in_H, num_patches_in_W)
     print("After reshaping to patch grids:", masks.shape)
 
-    # Step 5: Restructure patch-wise masks into pixel-wise masks
+    # Restructure patch-wise masks into pixel-wise masks
     masks = masks.repeat_interleave(num_pixels_in_patch_H, dim=3)
     masks = masks.repeat_interleave(num_pixels_in_patch_W, dim=4)
     print("After converting to pixel-wise masks:", masks.shape)
-
-    # Visualize one frame of the mask
-    slice_idx = 0  # Example slice
-    plt.figure(figsize=(5, 5))
-    plt.title("Reshaped Mask Frame")
-    plt.imshow(masks[slice_idx, 0, 0, :, :].detach().cpu().numpy(), cmap='gray')
-    plt.show()
 
     return masks
 
